@@ -1,144 +1,118 @@
-# AI Voice Caller
+# AI Voice Caller — Fortinet SLED Outreach
 
-Outbound AI voice call system for Fortinet SLED prospecting. Calls using SignalWire, AI agent identifies as "Paul from Fortinet" and collects IT contact info.
+Autonomous outbound calling agent for Samson's SD/NE/IA territory. Paul calls IT contacts at schools, cities, counties, utilities, and government orgs, qualifies them, and logs structured summaries.
 
-**Phone number:** +1 (602) 898-5026  
-**SignalWire space:** 6eyes.signalwire.com  
-**Dashboard:** https://6eyes.signalwire.com
-
----
-
-## 🚦 Current Status (as of March 3, 2026)
+## Status
 
 | Component | Status | Notes |
 |---|---|---|
-| SignalWire account | ✅ Active | Project ID: `6b9a5a5f...` |
-| Phone number | ✅ Owned | +16028985026 (and +14806025848) |
-| Outbound calls connect | ✅ Working | Phone rings, call connects |
-| AI agent speaks | ✅ FIXED | `make_call_v8.py` — inline SWML, confirmed working Mar 3 |
-| Post-call logging | ✅ CONFIRMED | `webhook_server.py` on :18790, logs to `logs/call_summaries.jsonl` — real call verified Mar 3 |
-| hooks.6eyes.dev tunnel | ✅ FIXED | Flask server replacing dead Dialogflow server, PM2-managed |
-| SWAIG functions | ❌ Not built | Next: log contacts to Salesforce/vault after call |
+| Outbound calls | ✅ WORKING | `make_call_v8.py` — inline SWML, no relay-bin |
+| Agent dialogue | ✅ WORKING | `openai.onyx` confirmed Mar 3 |
+| Post-call logging | ✅ WORKING | `webhook_server.py` on :18790, JSONL log |
+| Two-voice A/B | ✅ WORKING | 602 = `openai.onyx`, 480 = `gcloud.en-US-Casual-K` |
+| Campaign runner | ✅ READY | `campaign_runner_v2.py` — research + batch calling |
+| Pre-call research | ✅ READY | `research_agent.py` — Perplexity Sonar via OpenRouter |
+| Webhook server | ✅ PM2 | `hooks-server` on PM2, public at `hooks.6eyes.dev` |
 
-**Bottom line:** Calls connect, Paul speaks, post-call summaries are captured. Next step is campaign runner + Salesforce writeback.
+## Voice A/B Test Setup
 
----
+Two numbers, two voices, two scripts — running in parallel to see which performs better:
 
-## 🔍 Where We Left Off
+| Lane | Number | Voice | Script |
+|---|---|---|---|
+| A (Municipal) | +16028985026 | `openai.onyx` | `prompts/paul.txt` |
+| B (Cold List) | +14806024668 | `gcloud.en-US-Casual-K` | `prompts/cold_outreach.txt` |
 
-Last active session: **March 3, 2026** — silence bug diagnosed and fixed.
-
-### Root causes found (both fixed):
-1. **AI agent 404** — Referenced agent `f2c41814...` no longer existed on SignalWire. Every v2–v7 call was routing to a ghost.
-2. **Dead SWAIG webhook** — v3–v7 pointed `web_hook_url` at a GCF function (`swaigWebhook`) that was never deployed. SignalWire silently kills AI init when a SWAIG endpoint is unreachable.
-3. **Dead hooks server** — port 18790 was running an old Dialogflow `functions-framework` from an abandoned approach. Replaced with `webhook_server.py`.
-
-### Fix applied:
-- `make_call_v8.py` — inline SWML with prompt directly in call body, no `ai_agent_id`, no SWAIG, `post_prompt_url` pointing to `https://hooks.6eyes.dev/voice-caller/post-call`
-- `webhook_server.py` — Flask server on :18790, catches post-call summaries, appends to `logs/call_summaries.jsonl`
-- Confirmed working: call connected, Paul spoke, Mar 3 2026
-
-### Current working script:
-```bash
-python3 make_call_v8.py                    # Call Samson's cell (test)
-python3 make_call_v8.py +1XXXXXXXXXX       # Call any number
-```
-
----
-
-## 📁 Project Structure
-
-```
-ai-voice-caller/
-├── README.md                  ← You are here
-├── make_call_v7.py            ← Latest diagnostic call script (3 approaches)
-├── make_call_v2.py            ← Last known working call (basic AI agent)
-├── server.py                  ← Flask webhook server for SWML responses
-├── call.py                    ← Simple outbound call trigger
-├── config/
-│   └── signalwire.json        ← Credentials (do not commit)
-├── webhook/                   ← Node.js webhook server (alternative to server.py)
-├── directives/
-│   └── voice-caller-core.md  ← Full system directive
-├── execution/
-│   ├── log_call.py            ← Log call outcomes to vault
-│   └── save_contact.py        ← Save collected contacts
-└── logs/                      ← Call logs and debug output
-```
-
----
-
-## 🚀 Quick Start (once fixed)
+## Quick Start
 
 ```bash
-# Test a call (baseline — cXML Say, no AI)
-python3 make_call_v7.py +16022950104 --approach a
+# Single test call
+python3 make_call_v8.py +16022950104
 
-# Test AI agent via relay-bin
-python3 make_call_v7.py +16022950104 --approach b
+# Specify voice + prompt explicitly
+python3 make_call_v8.py +16025551234 --voice openai.onyx --prompt prompts/paul.txt --from +16028985026
+python3 make_call_v8.py +16025551234 --voice gcloud.en-US-Casual-K --prompt prompts/cold_outreach.txt --from +14806024668
 
-# Test AI agent via GCF webhook
-python3 make_call_v7.py +16022950104 --approach c
+# Dry run campaign (research only, no calls)
+python3 campaign_runner_v2.py campaigns/sled-territory-832.csv --dry-run
+
+# Run campaign (10 calls, 4-min spacing, business hours only)
+python3 campaign_runner_v2.py campaigns/sled-territory-832.csv --limit 10 --interval 240 --business-hours
 ```
 
----
+## File Structure
 
-## 🔧 Debugging the Silence Issue
-
-Run in order to narrow down the cause:
-
-**Step 1 — Test baseline (no AI):**
-```bash
-python3 make_call_v7.py +16022950104 --approach a
 ```
-Expected: Phone rings, hears TTS "Hello! This is a test call from SignalWire."  
-If this fails → carrier/infra issue. If it works → problem is AI layer specifically.
+make_call_v8.py          # Main call script — inline SWML, loads voice+prompt from args
+call.py                  # Legacy — uses server.py / caller.6eyes.dev (old approach)
+server.py                # Legacy — Feb SWML server, agent named "Matt" (do not use)
+campaign_runner_v2.py    # Batch caller — research → personalized SWML → call → log
+research_agent.py        # Pre-call research via Perplexity Sonar (OpenRouter)
+webhook_server.py        # Flask server on :18790 — receives post-call summaries
 
-**Step 2 — Check relay-bin SWML:**
-Open https://6eyes.signalwire.com/relay-bins in the dashboard.  
-Verify `f2fad3f1-ec3d-4155-91d2-c7993f8c8d4e` exists and contains valid SWML with `ai_agent_id`.
+prompts/
+  paul.txt               # Municipal/government script (city, county, sheriff, tribal)
+  cold_outreach.txt      # Cold list script (all verticals — qualify or disqualify fast)
 
-**Step 3 — Check AI agent:**
-Open https://6eyes.signalwire.com/neon/frames/auto_create/ai_agents  
-Verify agent `f2c41814-4a36-436b-b723-71d5cdffec60` ("Discovery Mode") is active.
+config/
+  signalwire.json        # Credentials — GITIGNORED, never commit
 
-**Step 4 — Check call logs:**
-```bash
-tail -50 logs/auto_recovery.log
+logs/
+  call_summaries.jsonl   # Flat log of all post-call summaries
+  auto_recovery.log      # Legacy worker log
+
+campaigns/               # CSV lead lists go here
 ```
 
----
+## Editing Paul's Script
 
-## 📞 Credentials
+Go to **[prompts/paul.txt](prompts/paul.txt)** or **[prompts/cold_outreach.txt](prompts/cold_outreach.txt)** and edit directly in GitHub. No code changes needed — `make_call_v8.py` loads the file on every call.
 
-| Item | Value |
-|---|---|
-| Project ID | `6b9a5a5f-7d10-436c-abf0-c623208d76cd` |
-| Space URL | `6eyes.signalwire.com` |
-| Auth Token | In `config/signalwire.json` and `.env` |
-| Primary number | `+16028985026` |
-| Backup number | `+14806025848` |
-| AI Agent ID | `f2c41814-4a36-436b-b723-71d5cdffec60` |
-| Relay-bin SWML | `f2fad3f1-ec3d-4155-91d2-c7993f8c8d4e` |
+## Credentials
 
----
+All credentials live in `config/signalwire.json` (gitignored):
+```json
+{
+  "project_id": "...",
+  "auth_token": "...",   ← rotate at 6eyes.signalwire.com if exposed
+  "space_url": "6eyes.signalwire.com",
+  "phone_number": "+14806024668"
+}
+```
 
-## 📋 Next Steps (priority order)
+Never hardcode credentials. The old token `PT4f6bab11...` was exposed in commit history Mar 3 — rotated same day.
 
-- [x] ~~Fix AI silence bug~~ — done Mar 3, `make_call_v8.py`
-- [x] ~~Fix hooks.6eyes.dev~~ — done Mar 3, `webhook_server.py`
-- [x] ~~Wire post_prompt_url~~ — done Mar 3, summaries log to `logs/call_summaries.jsonl`
-- [x] ~~Fix summary field mapping~~ — done Mar 3, SignalWire sends `post_prompt_data.raw` not `post_prompt_result`
-- [ ] **Make 5 test calls** — verify summaries are useful before building storage
-- [ ] **Export SD/NE district leads** — CSV from Salesforce or SLED toolkit
-- [ ] **Build campaign runner** — batch caller with configurable delay, reads from CSV
-- [ ] **Salesforce writeback** — push captured contacts into the right SF account record
-- [ ] **Refine Paul's prompt** — tune based on real call outcomes
+## Post-Call Log Format
 
----
+`logs/call_summaries.jsonl` — one JSON object per line:
+```json
+{
+  "timestamp": "2026-03-03T17:08:36Z",
+  "call_id": "...",
+  "from": "+14806024668",
+  "to": "+16025551234",
+  "summary": "- Spoke with: Mike\n- Role: IT Manager\n- Organization: ..."
+}
+```
 
-## 📚 Relevant Docs
+## Infrastructure
 
-- [SignalWire SWML Reference](https://developer.signalwire.com/sdks/reference/swml/)
-- [SignalWire AI Agent API](https://developer.signalwire.com/rest/signalwire-rest/endpoints/fabric/ai-agents/)
-- [SignalWire Calling API](https://developer.signalwire.com/rest/signalwire-rest/endpoints/calling/calls/)
+- **Webhook server**: PM2 name `hooks-server`, port 18790, public at `https://hooks.6eyes.dev/voice-caller/post-call`
+- **Legacy SWML server**: PM2 name `caller-server`, port 3001, public at `https://caller.6eyes.dev` (used by old `call.py` only)
+- **SignalWire space**: `6eyes.signalwire.com`
+- **Phone numbers**: +16028985026 (Lane A) | +14806024668 (Lane B)
+
+## Campaign Rules
+
+- Max 10–15 calls/hour with randomized spacing
+- Call window: 8am–4pm Central (SD/NE/IA)
+- Log every outcome: reached / voicemail / wrong number / not interested / meeting booked
+- A clean "not interested" is a win — it clears the list
+
+## Next Steps
+
+- [ ] Export SD/NE/IA district + municipal leads to `campaigns/` CSV
+- [ ] Run first live campaign batch (5–10 calls) and review summary quality
+- [ ] Review A/B voice data after 20+ calls — pick winner or keep both
+- [ ] Build Salesforce writeback from `logs/call_summaries.jsonl`
+- [ ] Add voicemail detection to skip/leave message automatically
