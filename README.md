@@ -1,112 +1,139 @@
-# AI Voice Caller - SignalWire Discovery Mode
+# AI Voice Caller
 
-## ✅ Status: WORKING
+Outbound AI voice call system for Fortinet SLED prospecting. Calls using SignalWire, AI agent identifies as "Paul from Fortinet" and collects IT contact info.
 
-Successfully built using SignalWire's native AI agent tools.
+**Phone number:** +1 (602) 898-5026  
+**SignalWire space:** 6eyes.signalwire.com  
+**Dashboard:** https://6eyes.signalwire.com
 
-## What Was Built
+---
 
-### 1. AI Agent: "Discovery Mode"
-- **Agent ID**: `f2c41814-4a36-436b-b723-71d5cdffec60`
-- **Resource ID**: `b578e5a5-b3ee-4b76-937c-6f74756c20a0`
-- **Voice**: Amazon Matthew (natural male voice)
-- **Model**: GPT-4.1-nano
-- **ASR Engine**: Deepgram Nova-3
-- **Prompt**: "You are Paul calling for Samson from Fortinet. Your goal is to collect IT contact information. Ask who handles IT for their organization and get their direct phone number. Be professional, friendly, and brief."
+## 🚦 Current Status (as of March 3, 2026)
 
-### 2. Test Call Made
-- **Call ID**: `837dd7ea-e868-4d29-9450-c47ff7c44a5a`
-- **From**: +16028985026
-- **To**: +16022950104 (Samson's cell)
-- **Status**: Successfully queued and initiated
+| Component | Status | Notes |
+|---|---|---|
+| SignalWire account | ✅ Active | Project ID: `6b9a5a5f...` |
+| Phone number | ✅ Owned | +16028985026 (and +14806025848) |
+| Outbound calls connect | ✅ Working | Phone rings, call connects |
+| AI agent speaks | ❌ BROKEN | **Calls connect but agent is silent** |
+| SWML webhook | ⚠️ Unclear | Multiple approaches tested, none confirmed working |
+| SWAIG functions | ❌ Not built | Planned for CRM/contact logging |
 
-## How It Works
+**Bottom line:** Infrastructure works, calls get through. The AI agent silently connects but won't speak. This is the active blocker.
 
-The solution uses SignalWire's native REST API (not custom webhooks or Cloud Functions):
-1. AI Agent created via `/api/fabric/resources/ai_agents` endpoint
-2. Outbound call made via `/api/calling/calls` endpoint with SWML
-3. SWML script references the AI agent by ID
-4. No external webhooks needed - all handled by SignalWire
+---
 
-## Scripts
+## 🔍 Where We Left Off
 
-### `make_call_v2.py`
-Makes an outbound call using the AI agent. Usage:
-```bash
-python3 make_call_v2.py
+Last active debugging: **Feb 17, 2026**
+
+### What was tried:
+- `make_call_v7.py` — 3 diagnostic approaches (A/B/C):
+  - **Approach A** (cXML `<Say>` baseline) — tests if carrier/infra works at all
+  - **Approach B** (Calling API + SignalWire relay-bin SWML) — tests native AI agent via hosted SWML
+  - **Approach C** (Calling API + GCF webhook) — tests external SWML endpoint
+- Results were logged but root cause of silence was not confirmed
+
+### Leading hypothesis:
+The SWML `ai_agent_id` reference is not triggering the agent correctly — either the relay-bin URL is stale/misconfigured, or the AI agent resource itself is not responding. The baseline test (Approach A) should confirm whether the issue is infrastructure or specifically the AI layer.
+
+### Last confirmed working:
+- `make_call_v2.py` — call connected, agent was created, but silence on v3+
+- SignalWire AI Agent ID: `f2c41814-4a36-436b-b723-71d5cdffec60`
+
+---
+
+## 📁 Project Structure
+
+```
+ai-voice-caller/
+├── README.md                  ← You are here
+├── make_call_v7.py            ← Latest diagnostic call script (3 approaches)
+├── make_call_v2.py            ← Last known working call (basic AI agent)
+├── server.py                  ← Flask webhook server for SWML responses
+├── call.py                    ← Simple outbound call trigger
+├── config/
+│   └── signalwire.json        ← Credentials (do not commit)
+├── webhook/                   ← Node.js webhook server (alternative to server.py)
+├── directives/
+│   └── voice-caller-core.md  ← Full system directive
+├── execution/
+│   ├── log_call.py            ← Log call outcomes to vault
+│   └── save_contact.py        ← Save collected contacts
+└── logs/                      ← Call logs and debug output
 ```
 
-Edit the script to change:
-- `TO_NUMBER`: Target phone number
-- `FROM_NUMBER`: SignalWire number (must be owned)
-- `AI_AGENT_ID`: Which AI agent to use
+---
 
-## Configuration
+## 🚀 Quick Start (once fixed)
 
-See `config/signalwire.json` for credentials:
-- Project ID
-- Auth Token
-- Space URL
-- Phone number details
-
-## Dashboard Access
-
-- **AI Agents**: https://6eyes.signalwire.com/neon/frames/auto_create/ai_agents
-- **Call Flows**: https://6eyes.signalwire.com/neon/frames/auto_create/call_flows
-- **Phone Numbers**: https://6eyes.signalwire.com/?phone_numbers
-
-## Why This Approach Works
-
-✅ **No webhooks** - No need for Cloud Functions or external servers  
-✅ **No audio timing issues** - SignalWire handles all the speech/silence detection  
-✅ **Native AI tools** - Built-in conversation handling  
-✅ **Simple API** - Just REST calls, no complex SDKs needed  
-
-## Next Steps
-
-To use this for real campaigns:
-1. Update the AI agent prompt in the dashboard or via API
-2. Add SWAIG functions if you need external data lookups
-3. Configure post-call webhooks for logging/CRM integration
-4. Batch calls using the same `make_call_v2.py` pattern
-
-## API Endpoints Used
-
-### Create AI Agent
 ```bash
-POST https://6eyes.signalwire.com/api/fabric/resources/ai_agents
+# Test a call (baseline — cXML Say, no AI)
+python3 make_call_v7.py +16022950104 --approach a
+
+# Test AI agent via relay-bin
+python3 make_call_v7.py +16022950104 --approach b
+
+# Test AI agent via GCF webhook
+python3 make_call_v7.py +16022950104 --approach c
 ```
 
-### Make Outbound Call
+---
+
+## 🔧 Debugging the Silence Issue
+
+Run in order to narrow down the cause:
+
+**Step 1 — Test baseline (no AI):**
 ```bash
-POST https://6eyes.signalwire.com/api/calling/calls
-{
-  "command": "dial",
-  "params": {
-    "from": "+16028985026",
-    "to": "+1XXXXXXXXXX",
-    "swml": {
-      "version": "1.0.0",
-      "sections": {
-        "main": [
-          {
-            "ai": {
-              "ai_agent_id": "f2c41814-4a36-436b-b723-71d5cdffec60"
-            }
-          }
-        ]
-      }
-    }
-  }
-}
+python3 make_call_v7.py +16022950104 --approach a
+```
+Expected: Phone rings, hears TTS "Hello! This is a test call from SignalWire."  
+If this fails → carrier/infra issue. If it works → problem is AI layer specifically.
+
+**Step 2 — Check relay-bin SWML:**
+Open https://6eyes.signalwire.com/relay-bins in the dashboard.  
+Verify `f2fad3f1-ec3d-4155-91d2-c7993f8c8d4e` exists and contains valid SWML with `ai_agent_id`.
+
+**Step 3 — Check AI agent:**
+Open https://6eyes.signalwire.com/neon/frames/auto_create/ai_agents  
+Verify agent `f2c41814-4a36-436b-b723-71d5cdffec60` ("Discovery Mode") is active.
+
+**Step 4 — Check call logs:**
+```bash
+tail -50 logs/auto_recovery.log
 ```
 
-## Success Criteria Met
+---
 
-✅ AI agent created in SignalWire dashboard  
-✅ Call flow configured (via SWML)  
-✅ Phone number connected  
-✅ Test call to 6022950104 works  
-✅ AI speaks naturally, conversation flows  
+## 📞 Credentials
 
-**Result: WORKING SOLUTION** 🎉
+| Item | Value |
+|---|---|
+| Project ID | `6b9a5a5f-7d10-436c-abf0-c623208d76cd` |
+| Space URL | `6eyes.signalwire.com` |
+| Auth Token | In `config/signalwire.json` and `.env` |
+| Primary number | `+16028985026` |
+| Backup number | `+14806025848` |
+| AI Agent ID | `f2c41814-4a36-436b-b723-71d5cdffec60` |
+| Relay-bin SWML | `f2fad3f1-ec3d-4155-91d2-c7993f8c8d4e` |
+
+---
+
+## 📋 Next Steps (priority order)
+
+- [ ] **Run Approach A** — confirm baseline works (carrier not blocking)
+- [ ] **Run Approach B** — confirm relay-bin SWML is valid
+- [ ] **If both work** → problem is inside the AI agent config, not infra
+- [ ] **If A works, B fails** → fix relay-bin SWML or replace with inline SWML
+- [ ] **If A fails** → new SignalWire number may be needed (spam flagged)
+- [ ] Once calls + AI work: build SWAIG function to log contacts to vault
+- [ ] Once logging works: build campaign runner for batch calling
+
+---
+
+## 📚 Relevant Docs
+
+- [SignalWire SWML Reference](https://developer.signalwire.com/sdks/reference/swml/)
+- [SignalWire AI Agent API](https://developer.signalwire.com/rest/signalwire-rest/endpoints/fabric/ai-agents/)
+- [SignalWire Calling API](https://developer.signalwire.com/rest/signalwire-rest/endpoints/calling/calls/)
