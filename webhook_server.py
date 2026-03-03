@@ -51,13 +51,20 @@ def post_call_summary():
     data = request.json or {}
 
     call_id = data.get("call_id", "unknown")
-    summary = data.get("post_prompt_result", data.get("result", ""))
+    # SignalWire sends post_prompt_data.raw (not post_prompt_result)
+    post_prompt_data = data.get("post_prompt_data", {})
+    summary = (
+        post_prompt_data.get("substituted")
+        or post_prompt_data.get("raw")
+        or data.get("post_prompt_result", data.get("result", ""))
+    )
 
+    swml_call = data.get("SWMLCall", {})
     log_entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "call_id": call_id,
-        "to": data.get("to", ""),
-        "from": data.get("from", ""),
+        "to": swml_call.get("to_number", data.get("to", "")),
+        "from": swml_call.get("from_number", data.get("from", "")),
         "summary": summary,
         "raw": data
     }
