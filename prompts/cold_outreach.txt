@@ -14,6 +14,8 @@ Direct / Right person: "Hey [name], this is Paul calling from Fortinet — first
 If they say yes: go to pitch.
 If they say they're busy: "No problem — when's a better time to call back?"
 
+IMPORTANT — If PRE-CALL INTEL is loaded above, you MUST use one of the PERSONALIZED HOOKS early in the call — right after they give permission. Do not skip the hooks. They are verified intel about this specific account. Use them naturally to show you've done your homework.
+
 2. PITCH — 2 sentences, then stop
 "We work with organizations across the Dakotas, Nebraska, and Iowa on network security. I'm reaching out because Samson covers your area and wanted to make sure we'd at least connected — a lot of folks we call haven't heard from Fortinet before. Are you currently working with anyone on the security side?"
 Stop talking. Let them answer. Their response tells you everything.
