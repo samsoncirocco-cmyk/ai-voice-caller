@@ -23,10 +23,12 @@ Requires:
 
 import json
 import os
+import re
 import sys
 import time
 import requests
 from pathlib import Path
+from datetime import datetime, timezone
 
 # ─── Config ──────────────────────────────────────────────────────
 
@@ -187,22 +189,48 @@ def research_account(account_name, state, account_type="Education"):
     Research an account using best available AI provider.
     Returns dict with summary, hooks, pain points, etc.
     Falls back gracefully if APIs are unavailable.
+    Caches results for 7 days to avoid repeat API calls.
     """
+    # --- Cache check ---
+    cache_dir = Path(__file__).resolve().parent / "campaigns" / ".research_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = re.sub(r"[^\w\s-]", "", account_name).replace(" ", "_")[:80]
+    cache_file = cache_dir / f"{safe_name}.json"
+    if cache_file.exists():
+        try:
+            cached = json.loads(cache_file.read_text())
+            cached_at = cached.get("_cached_at", "")
+            if cached_at:
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(cached_at)).total_seconds()
+                if age < 7 * 86400:
+                    print(f"  [research] Cache hit: {account_name}")
+                    return cached
+        except Exception:
+            pass
+
     print(f"  [research] Researching: {account_name} ({state}, {account_type})")
+
+    def _cache_and_return(result):
+        result["_cached_at"] = datetime.now(timezone.utc).isoformat()
+        try:
+            cache_file.write_text(json.dumps(result, indent=2))
+        except Exception:
+            pass
+        return result
 
     # Try OpenRouter (Perplexity Sonar) first — web-grounded
     result = research_via_openrouter(account_name, state, account_type)
     if result:
         result["_source"] = "openrouter/sonar"
         print(f"  [research] Got context via Sonar: {result.get('summary', '')[:80]}...")
-        return result
+        return _cache_and_return(result)
 
     # Fallback to OpenAI
     result = research_via_openai(account_name, state, account_type)
     if result:
         result["_source"] = "openai/gpt-4o-mini"
         print(f"  [research] Got context via OpenAI: {result.get('summary', '')[:80]}...")
-        return result
+        return _cache_and_return(result)
 
     # Last resort: generic context
     print(f"  [research] All providers failed, using generic context")
@@ -313,6 +341,19 @@ def build_dynamic_swml(context, base_prompt_path="prompts/paul.txt",
         "- Notes: [anything else useful]"
     )
 
+    # Build a personalized static greeting using the account context
+    account_name = context.get("_account_name", "")
+    hook = context.get("hook_1", "")
+    if account_name and hook:
+        # Use research-generated hook as the static greeting (max 200 chars)
+        static_greeting = hook[:200]
+    else:
+        static_greeting = (
+            "Hi there! This is Paul calling from Fortinet. "
+            "I'm reaching out about network security solutions. "
+            "Do you have just a minute?"
+        )
+
     return {
         "version": "1.0.0",
         "sections": {
@@ -321,6 +362,7 @@ def build_dynamic_swml(context, base_prompt_path="prompts/paul.txt",
                     "ai": {
                         "languages": [
                             {
+                                # Note: "speed" field is INVALID — omitted intentionally
                                 "name": "English",
                                 "code": "en-US",
                                 "voice": voice
@@ -335,7 +377,17 @@ def build_dynamic_swml(context, base_prompt_path="prompts/paul.txt",
                         },
                         "post_prompt_url": webhook_url,
                         "params": {
-                            "direction": "outbound"
+                            # FIX 2026-03-03: wait_for_user defaults to True on outbound calls.
+                            # Without these params, agent waits for remote party to speak → silence.
+                            "direction": "outbound",
+                            "wait_for_user": False,
+                            "speak_when_spoken_to": False,
+                            "start_paused": False,
+                            "static_greeting": static_greeting,
+                            "outbound_attention_timeout": 30000
+                        },
+                        "engine": {
+                            "asr": {"engine": "deepgram", "model": "nova-3"}
                         }
                     }
                 }
