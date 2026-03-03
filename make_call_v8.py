@@ -34,7 +34,7 @@ SPACE_URL  = _cfg["space_url"]
 PROJECT_ID = _cfg["project_id"]
 AUTH_TOKEN = _cfg["auth_token"]
 
-DEFAULT_FROM   = "+16028985026"
+DEFAULT_FROM   = _cfg.get("phone_number", "+14806024668")  # Load from config, not hardcoded
 DEFAULT_TO     = "+16022950104"
 DEFAULT_VOICE  = "openai.onyx"
 DEFAULT_PROMPT = "prompts/paul.txt"
@@ -62,7 +62,14 @@ def load_prompt(path):
     return open(full_path).read().strip()
 
 
-def build_swml(prompt_text, voice):
+DEFAULT_GREETING = (
+    "Hi there! This is Paul calling from Fortinet. "
+    "I'm reaching out to IT leaders in your area about network security. "
+    "Do you have just a minute?"
+)
+
+
+def build_swml(prompt_text, voice, static_greeting=None):
     return {
         "version": "1.0.0",
         "sections": {
@@ -71,10 +78,10 @@ def build_swml(prompt_text, voice):
                     "ai": {
                         "languages": [
                             {
+                                # Note: "speed" field is INVALID and causes silent AI block failure
                                 "name": "English",
                                 "code": "en-US",
-                                "voice": voice,
-                                "speed": "auto"
+                                "voice": voice
                             }
                         ],
                         "prompt": {
@@ -86,7 +93,17 @@ def build_swml(prompt_text, voice):
                         },
                         "post_prompt_url": "https://hooks.6eyes.dev/voice-caller/post-call",
                         "params": {
-                            "direction": "outbound"
+                            # FIX 2026-03-03: wait_for_user defaults to True on outbound calls.
+                            # Without these params, agent waits for remote party to speak → silence.
+                            "direction": "outbound",
+                            "wait_for_user": False,
+                            "speak_when_spoken_to": False,
+                            "start_paused": False,
+                            "static_greeting": static_greeting or DEFAULT_GREETING,
+                            "outbound_attention_timeout": 30000
+                        },
+                        "engine": {
+                            "asr": {"engine": "deepgram", "model": "nova-3"}
                         }
                     }
                 }
@@ -95,10 +112,10 @@ def build_swml(prompt_text, voice):
     }
 
 
-def make_call(to_number, from_number, voice, prompt_path):
+def make_call(to_number, from_number, voice, prompt_path, static_greeting=None):
     prompt_text = load_prompt(prompt_path)
     auth_b64 = base64.b64encode(f"{PROJECT_ID}:{AUTH_TOKEN}".encode()).decode()
-    swml = build_swml(prompt_text, voice)
+    swml = build_swml(prompt_text, voice, static_greeting=static_greeting)
 
     payload = {
         "command": "dial",
