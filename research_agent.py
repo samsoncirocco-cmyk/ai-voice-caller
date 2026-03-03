@@ -204,6 +204,8 @@ def research_account(account_name, state, account_type="Education"):
                 age = (datetime.now(timezone.utc) - datetime.fromisoformat(cached_at)).total_seconds()
                 if age < 7 * 86400:
                     print(f"  [research] Cache hit: {account_name}")
+                    cached.setdefault("account_name", account_name)
+                    cached.setdefault("state", state)
                     return cached
         except Exception:
             pass
@@ -211,6 +213,9 @@ def research_account(account_name, state, account_type="Education"):
     print(f"  [research] Researching: {account_name} ({state}, {account_type})")
 
     def _cache_and_return(result):
+        result["account_name"] = account_name
+        result["state"] = state
+        result["account_type"] = account_type
         result["_cached_at"] = datetime.now(timezone.utc).isoformat()
         try:
             cache_file.write_text(json.dumps(result, indent=2))
