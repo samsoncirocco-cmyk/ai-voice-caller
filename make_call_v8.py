@@ -20,12 +20,17 @@ Once this works:
 import sys
 import json
 import base64
+import os
 import requests
 
-# === Credentials ===
-SPACE_URL   = "6eyes.signalwire.com"
-PROJECT_ID  = "6b9a5a5f-7d10-436c-abf0-c623208d76cd"
-AUTH_TOKEN  = "PT4f6bab11e0ba7fcde64b54a8385064e8fae086e359b04be8"
+# === Credentials (loaded from config/signalwire.json — never hardcode) ===
+_cfg_path = os.path.join(os.path.dirname(__file__), "config", "signalwire.json")
+with open(_cfg_path) as _f:
+    _cfg = json.load(_f)
+
+SPACE_URL   = _cfg["space_url"]
+PROJECT_ID  = _cfg["project_id"]
+AUTH_TOKEN  = _cfg["auth_token"]
 
 FROM_NUMBER = "+16028985026"
 DEFAULT_TO  = "+16022950104"  # Samson's cell
