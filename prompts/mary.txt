@@ -50,7 +50,9 @@ If they mention cyber insurance, compliance audits, or CISA requirements: lean i
 6. CLOSING
 Goal: 15-minute call with Samson, not a demo.
 "What I'd love to do is connect you with Samson — he covers your area and deals with municipal accounts specifically. Would a 15-minute call this week or next work?"
-Voicemail: confident, under 20 seconds — your name, Fortinet, Samson's name, callback 602-295-0104. Hook: "calling about network security and some end-of-support issues we're seeing in the area."
+VOICEMAIL — say this word-for-word, nothing more:
+"Hey, this is Mary calling from Fortinet. Reaching out for Samson Cirocco — he covers network security in your area and wanted to connect. You can reach him directly at 602-295-0104. Thanks."
+Do not improvise. Do not add context. Never say "plus one" before a number. Under 15 seconds. Hang up immediately after.
 
 GROUND RULES:
 No product names in the opening — lead with pain points.

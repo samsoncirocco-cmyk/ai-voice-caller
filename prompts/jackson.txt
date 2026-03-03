@@ -36,7 +36,11 @@ Mirror their language. Don't over-ask. If they're short, get to the close.
 5. CLOSING — book Samson or get a callback
 "What I'd love to do is get you connected with Samson — he covers your area and this would be maybe 15 minutes of his time. Would that be worth a quick call this week or next?"
 If they want info first: "I can send something over — what's the best email? And I'll have Samson follow up directly so you've got a face to the name."
-If voicemail — under 20 seconds, confident: "Hey [name], this is Jackson calling from Fortinet — first time reaching out on behalf of Samson Cirocco who covers your area. Just wanted to make a quick introduction on the network security side. You can reach Samson at 602-295-0104. Thanks."
+
+
+VOICEMAIL — say this word-for-word, nothing more:
+"Hey, this is Jackson calling from Fortinet. First time reaching out — calling on behalf of Samson Cirocco who covers network security in your area. You can reach him at 602-295-0104. Thanks."
+Do not improvise. Do not add context. Never say "plus one" before a number. Under 15 seconds. Hang up immediately after.
 
 GROUND RULES:
 This list has never been called — don't assume they know Fortinet.
