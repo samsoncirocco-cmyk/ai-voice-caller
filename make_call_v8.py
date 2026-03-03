@@ -68,7 +68,8 @@ def build_swml(prompt_text, voice):
                             {
                                 "name": "English",
                                 "code": "en-US",
-                                "voice": voice
+                                "voice": voice,
+                                "speed": "auto"
                             }
                         ],
                         "prompt": {
