@@ -1,0 +1,19 @@
+# AI Voice Caller — Python Dependencies
+# Install: pip install -r requirements.txt
+
+# Core (required for make_call_v8, campaign_runner_v2, webhook_server)
+requests>=2.28
+flask>=3.0
+
+# Research agent
+# (uses requests, already listed above)
+
+# Optional: SignalWire SDK (for agents/ directory, not needed for v8 inline SWML)
+# signalwire-agents>=0.1
+
+# Optional: Firestore (for execution/campaign_runner.py legacy version)
+# google-cloud-firestore>=2.0
+# google-cloud-secret-manager>=2.0
+
+# Optional: Salesforce sync
+# simple-salesforce>=1.12

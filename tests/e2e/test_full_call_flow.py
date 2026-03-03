@@ -419,11 +419,11 @@ def main():
     
     args = parser.parse_args()
     
-    # Update globals
-    global PROJECT_ID, REGION, BASE_URL
-    PROJECT_ID = args.project
-    REGION = args.region
-    BASE_URL = f"https://{REGION}-{PROJECT_ID}.cloudfunctions.net"
+    # Override module-level config from CLI args (avoids global declaration issue)
+    import tests.e2e.test_full_call_flow as _self
+    _self.PROJECT_ID = args.project
+    _self.REGION = args.region
+    _self.BASE_URL = f"https://{_self.REGION}-{_self.PROJECT_ID}.cloudfunctions.net"
     
     if args.test_mode == 'live' and not args.phone:
         print("Error: --phone required for live testing")
