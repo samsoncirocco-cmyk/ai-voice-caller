@@ -74,6 +74,8 @@ def build_swml(prompt_text, voice, static_greeting=None):
         "version": "1.0.0",
         "sections": {
             "main": [
+                # answer verb REQUIRED before ai — establishes audio path
+                {"answer": {}},
                 {
                     "ai": {
                         "languages": [
@@ -95,15 +97,18 @@ def build_swml(prompt_text, voice, static_greeting=None):
                         "params": {
                             # FIX 2026-03-03: wait_for_user defaults to True on outbound calls.
                             # Without these params, agent waits for remote party to speak → silence.
+                            "ai_model": "gpt-4.1-nano",
                             "direction": "outbound",
                             "wait_for_user": False,
                             "speak_when_spoken_to": False,
-                            "start_paused": False,
                             "static_greeting": static_greeting or DEFAULT_GREETING,
-                            "outbound_attention_timeout": 30000
-                        },
-                        "engine": {
-                            "asr": {"engine": "deepgram", "model": "nova-3"}
+                            # attention_timeout (not outbound_attention_timeout — invalid param)
+                            "attention_timeout": 30000,
+                            "inactivity_timeout": 30000,
+                            "end_of_speech_timeout": 2000,
+                            # asr_engine format: "provider:model" — colon-separated string
+                            # NOT a nested engine.asr object (that was causing silent AI failure)
+                            "asr_engine": "deepgram:nova-3"
                         }
                     }
                 }
