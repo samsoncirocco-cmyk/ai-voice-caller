@@ -183,6 +183,35 @@ python3 make_call_v4.py --status
 
 ---
 
+## ⚠️ Outbound AI Silence Fix (2026-03-03)
+
+**Symptom:** Calls connect but agent never speaks — dead silence until hangup.
+
+**Root cause:** SignalWire AI defaults `wait_for_user=True` on outbound calls, meaning it
+waits for the remote party to speak first. On a cold outbound call, nobody speaks → silence.
+
+**Fix (required in ALL SWML ai blocks for outbound calls):**
+```json
+"params": {
+  "direction": "outbound",
+  "wait_for_user": false,
+  "speak_when_spoken_to": false,
+  "start_paused": false,
+  "static_greeting": "Hi there! This is Paul calling from Fortinet...",
+  "outbound_attention_timeout": 30000
+}
+```
+
+**Also fixed:**
+- `DEFAULT_FROM` in `make_call_v8.py` was hardcoded to old blocked number `+16028985026` → now loads from config (`+14806024668`)
+- Removed invalid `"speed": "auto"` field from languages block (causes silent AI block failure)
+- Added `"engine": {"asr": {"engine": "deepgram", "model": "nova-3"}}` for better speech recognition
+- Fixed `research_agent.build_dynamic_swml()` with same params (used by campaign_runner_v2.py)
+
+**Files fixed:** `make_call_v8.py`, `research_agent.py`
+
+---
+
 ## Self-Annealing Loop
 
 1. **Call fails?** Check `make_call_v4.py --check` first
