@@ -200,15 +200,18 @@ def main() -> int:
             # Default behavior: process missing sf_task_id
             pass
 
-        phone_last10 = _last10(item.get("to") or item.get("from"))
-        if not phone_last10:
-            skipped += 1
-            continue
-
-        account = _query_account_by_phone(phone_last10)
-        if not account or not account.get("Id"):
-            skipped += 1
-            continue
+        # Use sf_account_id directly if present (fast path — no phone lookup needed)
+        if item.get("sf_account_id"):
+            account = {"Id": item["sf_account_id"], "Name": item.get("sf_account_name", "")}
+        else:
+            phone_last10 = _last10(item.get("to") or item.get("from"))
+            if not phone_last10:
+                skipped += 1
+                continue
+            account = _query_account_by_phone(phone_last10)
+            if not account or not account.get("Id"):
+                skipped += 1
+                continue
 
         processed += 1
         date_str = _extract_date(item.get("timestamp"))
