@@ -130,7 +130,7 @@ def _create_task(account_id: str, date_str: str, summary: str,
                  account_name: str = "") -> Optional[str]:
     disposition = _parse_disposition(summary)
     label = f" - {account_name}" if account_name else ""
-    subject = f"Paul (AI) - {disposition}{label} - {date_str}"
+    subject = f"Outbound Call - {disposition}{label} - {date_str}"
     values = (
         f"Subject='{subject}' "
         "Status='Completed' "
