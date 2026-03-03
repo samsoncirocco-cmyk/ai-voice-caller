@@ -300,7 +300,10 @@ def run_campaign(csv_path, args):
         # Step 1: Research
         context = get_cached_research(lead["account"])
         if not context:
-            context = research_account(lead["account"], lead["state"], lead["account_type"])
+            context = research_account(
+                lead["account"], lead["state"], lead["account_type"],
+                sf_account_id=lead.get("sf_account_id", ""),
+            )
             cache_research(lead["account"], context)
 
         context_source = context.get("_source", "unknown")

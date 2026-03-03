@@ -184,43 +184,143 @@ def parse_research_json(content):
         return None
 
 
-def research_account(account_name, state, account_type="Education"):
+DRIVE_CACHE_PATH = "gdrive:paul-workspace/research-cache"
+L1_TTL_DAYS = 7
+L2_TTL_DAYS = 30
+
+
+def _stable_cache_key(account_name: str, state: str, sf_account_id: str = "") -> str:
+    """
+    Build a collision-resistant cache key.
+    Priority: sf_account_id (opaque SFDC ID, perfectly stable)
+              → state + normalized account name (removes punctuation, lowercased)
+    Never key by raw account_name alone — names collide across states.
+    """
+    if sf_account_id:
+        return sf_account_id  # e.g. "001Hr00000XYZabcIAE"
+    normalized = re.sub(r"[^\w]", "_", account_name.lower())
+    normalized = re.sub(r"_+", "_", normalized).strip("_")[:60]
+    state_clean = re.sub(r"[^\w]", "", state.lower())[:4]
+    return f"{state_clean}__{normalized}"
+
+
+def _check_json_ttl(data: dict, max_days: int) -> bool:
+    """Return True if _cached_at in data is within max_days. Always reads from JSON field, not filesystem mtime."""
+    cached_at = data.get("_cached_at", "")
+    if not cached_at:
+        return False
+    try:
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(cached_at)).total_seconds()
+        return age < max_days * 86400
+    except Exception:
+        return False
+
+
+def _drive_pull(cache_key: str) -> dict | None:
+    """
+    Best-effort: pull research JSON from Google Drive L2.
+    Returns parsed dict on hit, None on any failure.
+    Never raises — cache infra must never block calling.
+    """
+    import subprocess, tempfile
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run(
+                ["rclone", "copy", f"{DRIVE_CACHE_PATH}/{cache_key}.json", tmp, "--quiet"],
+                timeout=15, capture_output=True
+            )
+            if result.returncode != 0:
+                return None
+            dest = Path(tmp) / f"{cache_key}.json"
+            if not dest.exists():
+                return None
+            data = json.loads(dest.read_text())
+            if _check_json_ttl(data, L2_TTL_DAYS):
+                return data
+            return None  # stale in Drive too
+    except Exception as e:
+        print(f"  [research] Drive L2 pull failed (non-fatal): {e}")
+        return None
+
+
+def _drive_push(cache_key: str, local_path: Path) -> None:
+    """
+    Best-effort: push research JSON to Google Drive L2.
+    Never raises — cache infra must never block calling.
+    """
+    import subprocess
+    try:
+        subprocess.run(
+            ["rclone", "copy", str(local_path), DRIVE_CACHE_PATH, "--quiet"],
+            timeout=20, capture_output=True
+        )
+    except Exception as e:
+        print(f"  [research] Drive L2 push failed (non-fatal): {e}")
+
+
+def research_account(account_name, state, account_type="Education", sf_account_id=""):
     """
     Research an account using best available AI provider.
-    Returns dict with summary, hooks, pain points, etc.
+    Returns dict with summary, hooks, pain points, contacts, etc.
     Falls back gracefully if APIs are unavailable.
-    Caches results for 7 days to avoid repeat API calls.
+
+    Cache hierarchy (never blocks calling on failure):
+      L1 — local  campaigns/.research_cache/{key}.json  TTL: 7 days
+      L2 — Drive  gdrive:paul-workspace/research-cache/  TTL: 30 days
+      MISS — call Perplexity Sonar → write L1 + L2
+
+    Cache key: sf_account_id (preferred) or state__normalized_name (collision-safe).
+    TTL evaluated from JSON's _cached_at field, not filesystem timestamp.
     """
-    # --- Cache check ---
     cache_dir = Path(__file__).resolve().parent / "campaigns" / ".research_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    safe_name = re.sub(r"[^\w\s-]", "", account_name).replace(" ", "_")[:80]
-    cache_file = cache_dir / f"{safe_name}.json"
+
+    cache_key = _stable_cache_key(account_name, state, sf_account_id)
+    cache_file = cache_dir / f"{cache_key}.json"
+
+    # --- L1: local cache ---
     if cache_file.exists():
         try:
             cached = json.loads(cache_file.read_text())
-            cached_at = cached.get("_cached_at", "")
-            if cached_at:
-                age = (datetime.now(timezone.utc) - datetime.fromisoformat(cached_at)).total_seconds()
-                if age < 7 * 86400:
-                    print(f"  [research] Cache hit: {account_name}")
-                    cached.setdefault("account_name", account_name)
-                    cached.setdefault("state", state)
-                    return cached
+            if _check_json_ttl(cached, L1_TTL_DAYS):
+                print(f"  [research] L1 hit: {account_name} (key={cache_key})")
+                cached.setdefault("account_name", account_name)
+                cached.setdefault("state", state)
+                return cached
         except Exception:
             pass
 
-    print(f"  [research] Researching: {account_name} ({state}, {account_type})")
+    # --- L2: Google Drive cache ---
+    drive_data = _drive_pull(cache_key)
+    if drive_data:
+        print(f"  [research] L2 Drive hit: {account_name} (key={cache_key})")
+        drive_data.setdefault("account_name", account_name)
+        drive_data.setdefault("state", state)
+        # Repopulate L1 from Drive hit
+        try:
+            cache_file.write_text(json.dumps(drive_data, indent=2))
+        except Exception:
+            pass
+        return drive_data
+
+    # --- MISS: call Sonar ---
+    print(f"  [research] Cache miss — researching: {account_name} ({state}, {account_type})")
 
     def _cache_and_return(result):
         result["account_name"] = account_name
         result["state"] = state
         result["account_type"] = account_type
+        result["_cache_key"] = cache_key
+        if sf_account_id:
+            result["sf_account_id"] = sf_account_id
         result["_cached_at"] = datetime.now(timezone.utc).isoformat()
+        # Write L1
         try:
             cache_file.write_text(json.dumps(result, indent=2))
         except Exception:
             pass
+        # Write L2 (best-effort, never blocks)
+        _drive_push(cache_key, cache_file)
         return result
 
     # Try OpenRouter (Perplexity Sonar) first — web-grounded
