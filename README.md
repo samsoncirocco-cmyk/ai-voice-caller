@@ -16,7 +16,7 @@ Outbound AI voice call system for Fortinet SLED prospecting. Calls using SignalW
 | Phone number | ✅ Owned | +16028985026 (and +14806025848) |
 | Outbound calls connect | ✅ Working | Phone rings, call connects |
 | AI agent speaks | ✅ FIXED | `make_call_v8.py` — inline SWML, confirmed working Mar 3 |
-| Post-call logging | ✅ FIXED | `webhook_server.py` on :18790, logs to `logs/call_summaries.jsonl` |
+| Post-call logging | ✅ CONFIRMED | `webhook_server.py` on :18790, logs to `logs/call_summaries.jsonl` — real call verified Mar 3 |
 | hooks.6eyes.dev tunnel | ✅ FIXED | Flask server replacing dead Dialogflow server, PM2-managed |
 | SWAIG functions | ❌ Not built | Next: log contacts to Salesforce/vault after call |
 
@@ -128,6 +128,7 @@ tail -50 logs/auto_recovery.log
 - [x] ~~Fix AI silence bug~~ — done Mar 3, `make_call_v8.py`
 - [x] ~~Fix hooks.6eyes.dev~~ — done Mar 3, `webhook_server.py`
 - [x] ~~Wire post_prompt_url~~ — done Mar 3, summaries log to `logs/call_summaries.jsonl`
+- [x] ~~Fix summary field mapping~~ — done Mar 3, SignalWire sends `post_prompt_data.raw` not `post_prompt_result`
 - [ ] **Make 5 test calls** — verify summaries are useful before building storage
 - [ ] **Export SD/NE district leads** — CSV from Salesforce or SLED toolkit
 - [ ] **Build campaign runner** — batch caller with configurable delay, reads from CSV
