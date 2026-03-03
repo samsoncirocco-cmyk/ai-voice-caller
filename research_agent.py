@@ -251,19 +251,26 @@ def build_context_preamble(context):
     pain_points_str = ", ".join(context.get("pain_points", []))
     starters_str = "\n".join(f"  - {q}" for q in context.get("conversation_starters", []))
 
-    return f"""=== PRE-CALL INTEL (use this to personalize your approach) ===
-ACCOUNT: {context.get('summary', 'No specific intel available.')}
+    account_name = context.get('account_name', 'Unknown Account')
+    state = context.get('state', '')
+    location = f"{account_name}, {state}" if state else account_name
+
+    return f"""=== YOU ARE CALLING: {location.upper()} ===
+This is the account. Know this name. Reference it naturally.
+
+=== PRE-CALL INTEL ===
+ACCOUNT SUMMARY: {context.get('summary', 'No specific intel available.')}
 IT CONTACT: {_format_contacts_for_prompt(context.get('contacts', []))}
 TECH INTEL: {context.get('tech_intel', 'Unknown')}
 BUDGET CYCLE: {context.get('budget_cycle', 'Unknown')}
 
-PERSONALIZED HOOKS (weave one into your opening naturally):
+PERSONALIZED HOOKS (use one naturally after you get permission):
   A: "{context.get('hook_1', '')}"
   B: "{context.get('hook_2', '')}"
 
 LIKELY PAIN POINTS: {pain_points_str}
 
-GOOD DISCOVERY QUESTIONS FOR THIS ACCOUNT:
+GOOD DISCOVERY QUESTIONS:
 {starters_str}
 === END PRE-CALL INTEL ===
 
