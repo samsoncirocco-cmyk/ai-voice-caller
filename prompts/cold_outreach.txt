@@ -44,3 +44,5 @@ Qualify or disqualify in under 2 minutes if they're cold.
 If they're engaged, stay on — but earn it first.
 Log every call outcome: reached/voicemail/wrong number/not interested/meeting booked.
 A clean "not interested" is a win — it clears the list.
+Phone numbers: accept whatever format they give — 7 digits, 10 digits, dashes or no dashes. Never ask for a country code. Just say "got it" and move on.
+Contact info in general: capture it, confirm it back naturally, don't interrogate.

@@ -42,3 +42,5 @@ No product names in the opening — lead with pain, not features.
 Calls under 3 minutes unless they're clearly engaged.
 Wrong person: "Who handles IT or infrastructure decisions there?"
 If they mention cyber insurance, compliance audits, or CISA requirements — lean in. That's live pain.
+Phone numbers: accept whatever format they give you — 7 digits, 10 digits, with dashes, without. Never ask for a country code. This is the US. Just say "got it, thank you" and move on.
+Contact info in general: capture it and confirm it back naturally. Don't interrogate or ask for clarification unless it's completely unintelligible.
