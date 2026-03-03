@@ -3149,3 +3149,21 @@
 /home/samson/.openclaw/workspace/projects/ai-voice-caller/execution/auto_recovery_call.py:79: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
   now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
 [2026-03-03 14:00:04 UTC] Recovery already succeeded. Remove /home/samson/.openclaw/workspace/projects/ai-voice-caller/logs/recovery_success.marker to re-enable.
+/home/samson/.openclaw/workspace/projects/ai-voice-caller/execution/auto_recovery_call.py:79: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+[2026-03-03 14:30:05 UTC] Recovery already succeeded. Remove /home/samson/.openclaw/workspace/projects/ai-voice-caller/logs/recovery_success.marker to re-enable.
+/home/samson/.openclaw/workspace/projects/ai-voice-caller/execution/auto_recovery_call.py:79: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+[2026-03-03 15:00:04 UTC] Recovery already succeeded. Remove /home/samson/.openclaw/workspace/projects/ai-voice-caller/logs/recovery_success.marker to re-enable.
+/home/samson/.openclaw/workspace/projects/ai-voice-caller/execution/auto_recovery_call.py:79: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+[2026-03-03 15:30:05 UTC] Recovery already succeeded. Remove /home/samson/.openclaw/workspace/projects/ai-voice-caller/logs/recovery_success.marker to re-enable.
+/home/samson/.openclaw/workspace/projects/ai-voice-caller/execution/auto_recovery_call.py:79: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+[2026-03-03 16:00:04 UTC] Recovery already succeeded. Remove /home/samson/.openclaw/workspace/projects/ai-voice-caller/logs/recovery_success.marker to re-enable.
+/home/samson/.openclaw/workspace/projects/ai-voice-caller/execution/auto_recovery_call.py:79: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+[2026-03-03 16:30:04 UTC] Recovery already succeeded. Remove /home/samson/.openclaw/workspace/projects/ai-voice-caller/logs/recovery_success.marker to re-enable.
+/home/samson/.openclaw/workspace/projects/ai-voice-caller/execution/auto_recovery_call.py:79: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+[2026-03-03 17:00:04 UTC] Recovery already succeeded. Remove /home/samson/.openclaw/workspace/projects/ai-voice-caller/logs/recovery_success.marker to re-enable.

@@ -9,16 +9,21 @@ Usage:
 """
 import argparse
 import json
+import os
 import sys
 from urllib import request, parse, error
 
-# ── SignalWire Credentials ─────────────────────────────────────────────
-PROJECT_ID = "6b9a5a5f-7d10-436c-abf0-c623208d76cd"
-API_TOKEN = "PT4f6bab11e0ba7fcde64b54a8385064e8fae086e359b04be8"
-SPACE = "6eyes.signalwire.com"
+# ── SignalWire Credentials (load from config) ──────────────────────────
+_cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "signalwire.json")
+with open(_cfg_path) as _f:
+    _cfg = json.load(_f)
+
+PROJECT_ID = _cfg["project_id"]
+API_TOKEN = _cfg["auth_token"]
+SPACE = _cfg["space_url"]
 
 # ── Defaults ───────────────────────────────────────────────────────────
-DEFAULT_FROM = "+14806025848"
+DEFAULT_FROM = _cfg["phone_number"]  # +14806024668
 BASE_URL = "https://signalwire:fortinet2026@caller.6eyes.dev"
 API_URL = f"https://{SPACE}/api/laml/2010-04-01/Accounts/{PROJECT_ID}/Calls.json"
 

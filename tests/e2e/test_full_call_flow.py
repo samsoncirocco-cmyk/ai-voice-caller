@@ -410,6 +410,8 @@ class E2ETestRunner:
 
 
 def main():
+    global PROJECT_ID, REGION, BASE_URL
+    
     parser = argparse.ArgumentParser(description="Run E2E tests for AI Voice Caller")
     parser.add_argument('--test-mode', choices=['dry-run', 'live'], default='dry-run',
                        help='Test mode (dry-run: test functions only, live: test with real calls)')
@@ -419,11 +421,9 @@ def main():
     
     args = parser.parse_args()
     
-    # Override module-level config from CLI args (avoids global declaration issue)
-    import tests.e2e.test_full_call_flow as _self
-    _self.PROJECT_ID = args.project
-    _self.REGION = args.region
-    _self.BASE_URL = f"https://{_self.REGION}-{_self.PROJECT_ID}.cloudfunctions.net"
+    PROJECT_ID = args.project
+    REGION = args.region
+    BASE_URL = f"https://{REGION}-{PROJECT_ID}.cloudfunctions.net"
     
     if args.test_mode == 'live' and not args.phone:
         print("Error: --phone required for live testing")
