@@ -45,12 +45,13 @@ def main():
     
     with open(OUTPUT_CSV, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["phone", "name", "account", "notes"])
+        writer.writerow(["phone", "name", "account", "sf_account_id", "notes"])
         
         for acc in accounts:
             phone = acc["Phone"].strip()
             name = acc["Name"]
             account = acc["Name"]
+            sf_account_id = acc.get("Id", "")
             
             # Build notes with context
             notes_parts = []
@@ -63,7 +64,7 @@ def main():
             
             notes = " | ".join(notes_parts) if notes_parts else ""
             
-            writer.writerow([phone, name, account, notes])
+            writer.writerow([phone, name, account, sf_account_id, notes])
     
     print(f"✅ Campaign CSV created: {OUTPUT_CSV}")
     print(f"📊 Total targets: {len(accounts)}")

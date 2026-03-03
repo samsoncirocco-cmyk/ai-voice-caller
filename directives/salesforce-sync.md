@@ -1,110 +1,116 @@
 # Directive: Salesforce Sync
 
 ## Purpose
-Push AI voice caller data from Firestore to Salesforce CRM so sales reps have
-full visibility into AI-generated leads, call activities, and follow-ups.
+Push AI voice caller data from `logs/call_summaries.jsonl` to Salesforce CRM.
+Source of truth is the flat JSONL log (NOT Firestore — Firestore is legacy/unused).
 
 ## Authentication
-- Salesforce credentials stored in **GCP Secret Manager** (project: tatt-pro)
-  - `sf-username` - Salesforce username (email)
-  - `sf-password` - Salesforce password
-  - `sf-security-token` - Salesforce security token
-- Uses `simple-salesforce` Python library
+- Uses `sf` CLI (already authenticated, alias: `production`)
+- Script calls `sf data query` and `sf data create/upsert` via subprocess
+- No GCP secrets or simple_salesforce passwords needed
 - Script: `execution/sync_salesforce.py`
 
-## Firestore -> Salesforce Field Mapping
+## Data Sources
 
-### contacts (status: new) -> Account + Contact + Task
-| Firestore Field | SF Object | SF Field |
-|---|---|---|
-| account | Account | Name |
-| name | Contact | FirstName / LastName |
-| phone | Contact | Phone |
-| (auto) | Contact | LeadSource = 'AI Outbound Call' |
-| call_sid | Task | Description (reference) |
-| (auto) | Task | Subject = 'AI Discovery Call - Contact Captured' |
+### Primary: `logs/call_summaries.jsonl`
+Each line is one post-call webhook payload:
+```json
+{
+  "timestamp": "ISO8601",
+  "call_id": "uuid",
+  "to": "+16055551234",
+  "from": "+16028985026",
+  "summary": "Spoke with Jane Smith, IT Director, interest 3/5...",
+  "raw": { ... full call log ... }
+}
+```
 
-- If Account exists (name match): reuse it
-- If Contact exists (under Account, name match): update phone
-- Otherwise: create new Account + Contact
-- Always create completed Task linking Contact to Account
-- After sync: Firestore status -> 'synced_to_sf', sf_account_id, sf_contact_id added
+### Join: `campaigns/sled-territory-832.csv`
+Maps phone → account_name. Fields: `phone, name, account, notes`.
+Used to enrich call records with account_name when not embedded.
 
-### call_logs -> Event (Type: Call)
-| Firestore Field | SF Object | SF Field |
-|---|---|---|
-| call_sid | Event | Description (reference) |
-| outcome | Event | Subject = 'AI Call - {outcome}' |
-| duration | Event | DurationInMinutes |
-| transcript | Event | Description (truncated 500 chars) |
-| to (phone) | Event | WhatId (Account via Contact phone lookup) |
+### Future: `sf_account_id` in CSV
+`build_campaign_from_salesforce.py` should export AccountId alongside account name
+so the sync can match by ID (not fuzzy name). Until then, falls back to name lookup.
 
-### lead_scores -> Task (score-based priority)
-| Score Range | Priority | Task Subject |
-|---|---|---|
-| >= 70 (hot) | High | Schedule demo - {name} (score: N) |
-| 40-69 (warm) | Normal | Send info - {name} (score: N) |
-| < 40 (cold) | Skipped | No SF task created |
+## Research Cache: `campaigns/.research_cache/*.json`
+Pre-call research files contain structured contact candidates per account.
+Used to propose contacts to create in SFDC (confidence-gated).
 
-### cold-call-leads -> Lead
-| Firestore Field | SF Object | SF Field |
-|---|---|---|
-| name | Lead | FirstName / LastName |
-| company/account | Lead | Company |
-| phone | Lead | Phone |
-| email | Lead | Email |
-| (auto) | Lead | LeadSource = 'AI Cold Call' |
+## SFDC Object Mapping
 
-### callbacks -> Task (follow-up)
-| Firestore Field | SF Object | SF Field |
-|---|---|---|
-| name | Task | Subject = 'Callback - {name}' |
-| reason/notes | Task | Description |
-| callback_time | Task | ActivityDate |
-| phone | Task | WhoId (Contact via phone lookup) |
-| (auto) | Task | Priority = High |
+### Call Log → Activity (Task)
+| JSONL Field     | SF Object | SF Field               |
+|-----------------|-----------|------------------------|
+| call_id         | Task      | Description (ref)      |
+| timestamp       | Task      | ActivityDate           |
+| summary         | Task      | Description            |
+| account_name    | Task      | WhatId (Account)       |
+| (auto)          | Task      | Subject = 'AI Call - {outcome}' |
+| (auto)          | Task      | Status = 'Completed'   |
+
+### Research Contact Candidates → Contact (confidence-gated)
+| Research Field  | SF Object | SF Field               |
+|-----------------|-----------|------------------------|
+| name            | Contact   | FirstName / LastName   |
+| title           | Contact   | Title                  |
+| email           | Contact   | Email                  |
+| phone           | Contact   | Phone                  |
+| source_url      | Contact   | Description (ref)      |
+| (auto)          | Contact   | LeadSource = 'AI Research' |
+| (auto)          | Contact   | AccountId (matched)    |
+
+## Confidence Rules (CRITICAL — do not skip)
+
+| Confidence | source_type               | Action                              |
+|------------|---------------------------|-------------------------------------|
+| high       | official_directory        | Create/upsert Contact on Account    |
+| medium     | linkedin / news_mention   | Create Task: "Verify IT contact: [name]" |
+| low        | web_mention / generic     | Skip — do not write to SFDC         |
+| unknown    | any                       | Skip                                |
+
+**Never auto-create contacts from unverified web mentions.**
+
+## Account Matching (in order)
+1. **sf_account_id in CSV** → use directly (most reliable)
+2. **SFDC name query** → `SELECT Id FROM Account WHERE Name = '...'`
+3. **No match** → skip this record, log warning, do NOT create Account
+
+Do not create new Accounts from the sync script. Account creation is manual.
 
 ## CLI Usage
 ```bash
-# Full sync (all collections)
-python3 execution/sync_salesforce.py
-
-# Preview only (no SF writes, no SF creds needed)
+# Dry run — shows what would be synced, no SF writes
 python3 execution/sync_salesforce.py --dry-run
 
-# Filter by date
-python3 execution/sync_salesforce.py --since 2026-02-10
+# Sync all unprocessed call logs
+python3 execution/sync_salesforce.py
 
-# Single collection
-python3 execution/sync_salesforce.py --collection contacts
+# Sync with research contacts (confidence-gated)
+python3 execution/sync_salesforce.py --with-contacts
+
+# Limit to specific date
+python3 execution/sync_salesforce.py --since 2026-03-01
+
+# Single account (for testing)
+python3 execution/sync_salesforce.py --account "Tripp-Delmont School District"
 
 # Verbose
 python3 execution/sync_salesforce.py --dry-run -v
 ```
 
-## Dry-Run Behavior
-- Connects to Firestore and reads all docs normally
-- Logs what *would* be synced but makes no SF API calls
-- Does NOT require SF credentials
-- Use for testing Firestore reads and verifying data shape
+## Sync State
+Processed call_ids are tracked in `logs/sf_sync_state.json` to avoid duplicate writes.
+Format: `{"synced_call_ids": ["uuid1", "uuid2", ...]}`
 
 ## Error Handling
-- SF connection failure: exits with error, suggests --dry-run
-- Per-doc errors: logged and counted, does not stop other docs
+- Account not found → skip + warn (never create account)
+- SF API error → log error, continue with next record
+- Duplicate detection → check sf_sync_state.json before writing
 - Exit code 1 if any errors occurred
-- Idempotent: already-synced docs (status: synced_to_sf / synced_to_sf: true) are skipped
-
-## Setup Requirements
-1. GCP Secret Manager secrets must exist:
-   - `sf-username`: your.email@company.com
-   - `sf-password`: your Salesforce password
-   - `sf-security-token`: from SF Settings > Reset Security Token
-2. Python deps: `pip install simple-salesforce google-cloud-secret-manager google-cloud-firestore`
-3. GCP auth: `gcloud auth application-default login` on the machine running the script
 
 ## Self-Anneal Loop
-1. Run `--dry-run` to verify Firestore reads
-2. Set up SF secrets with real credentials
-3. Run live sync on a single collection: `--collection contacts`
-4. Verify in Salesforce UI
-5. Scale to full sync
+1. Run `--dry-run -v` to verify JSONL reads and account matching
+2. Test on 2-3 known accounts: `--account "Aberdeen Catholic School System" --dry-run`
+3. Run live on single account, verify in SF UI
+4. Scale to full sync

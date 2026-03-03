@@ -68,7 +68,17 @@ Type: {account_type}
 Return a JSON object with EXACTLY these fields (no markdown, no backticks, just raw JSON):
 {{
   "summary": "2-3 sentence overview of the organization, size, and what they do",
-  "it_contact": "Name and title of IT director/manager if findable, otherwise 'Unknown'",
+  "contacts": [
+    {{
+      "name": "Full name if found, else null",
+      "title": "Job title (IT Director, Technology Coordinator, Superintendent, etc.)",
+      "email": "Email address if publicly available, else null",
+      "phone": "Direct phone if publicly available, else null",
+      "source_url": "URL where this person was found (district website, LinkedIn, news, etc.)",
+      "source_type": "official_directory | linkedin | news_mention | web_mention",
+      "confidence": "high (official directory) | medium (linkedin/news) | low (web mention)"
+    }}
+  ],
   "hook_1": "A specific, personalized opening line referencing something current about this org (hiring, budget, news, E-Rate, board decision, tech upgrade). Must be conversational, not salesy.",
   "hook_2": "A second alternative opening hook using different intel",
   "pain_points": ["list", "of", "likely", "infrastructure", "pain", "points"],
@@ -76,6 +86,10 @@ Return a JSON object with EXACTLY these fields (no markdown, no backticks, just 
   "budget_cycle": "When their fiscal year starts, any known budget timelines or E-Rate filing windows",
   "conversation_starters": ["2-3 open-ended questions that would reveal their network security needs"]
 }}
+
+For contacts: search the organization's official website staff directory FIRST (highest confidence).
+Then LinkedIn, then news mentions. Include up to 3 candidates. If no contacts found, return empty array [].
+Do NOT invent contacts — only include people you found in a real source with a source_url.
 
 Focus on publicly available information. If you can't find specific details, make reasonable inferences based on the organization type and location. Be factual, not speculative."""
 
@@ -194,7 +208,7 @@ def research_account(account_name, state, account_type="Education"):
     print(f"  [research] All providers failed, using generic context")
     return {
         "summary": f"{account_name} is a {account_type.lower()} organization in {state}.",
-        "it_contact": "Unknown",
+        "contacts": [],
         "hook_1": f"I'm reaching out to {account_type.lower()} organizations in {state} about network security — do you have a moment?",
         "hook_2": f"We've been working with several {account_type.lower()} institutions in {state} on infrastructure security, and I wanted to connect.",
         "pain_points": ["network security", "firewall management", "compliance requirements"],
@@ -209,6 +223,24 @@ def research_account(account_name, state, account_type="Education"):
     }
 
 
+# ─── Contact Helpers ─────────────────────────────────────────────
+
+def _format_contacts_for_prompt(contacts):
+    """Format contacts list for injection into SWML prompt."""
+    if not contacts:
+        return "Unknown — your first goal is to identify the IT Director or Technology Coordinator."
+    lines = []
+    for c in contacts[:3]:  # max 3 candidates
+        name = c.get("name") or "Unknown"
+        title = c.get("title") or "Unknown title"
+        conf = c.get("confidence", "low")
+        email = c.get("email") or ""
+        phone = c.get("phone") or ""
+        extra = " | ".join(filter(None, [email, phone]))
+        lines.append(f"  - {name} ({title}) [{conf} confidence]{' — ' + extra if extra else ''}")
+    return "\n" + "\n".join(lines)
+
+
 # ─── Dynamic SWML Builder ───────────────────────────────────────
 
 def build_context_preamble(context):
@@ -221,7 +253,7 @@ def build_context_preamble(context):
 
     return f"""=== PRE-CALL INTEL (use this to personalize your approach) ===
 ACCOUNT: {context.get('summary', 'No specific intel available.')}
-IT CONTACT: {context.get('it_contact', 'Unknown — your first goal is to identify them.')}
+IT CONTACT: {_format_contacts_for_prompt(context.get('contacts', []))}
 TECH INTEL: {context.get('tech_intel', 'Unknown')}
 BUDGET CYCLE: {context.get('budget_cycle', 'Unknown')}
 
