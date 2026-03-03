@@ -181,14 +181,14 @@ def cache_research(account_name, context):
 
 # ─── Call Execution ──────────────────────────────────────────────
 
-def make_call(to_number, swml):
+def make_call(to_number, swml, from_number=None):
     """Place outbound call via SignalWire Calling API."""
     auth_b64 = base64.b64encode(f"{PROJECT_ID}:{AUTH_TOKEN}".encode()).decode()
 
     payload = {
         "command": "dial",
         "params": {
-            "from": FROM_NUMBER,
+            "from": from_number or FROM_NUMBER,
             "to": to_number,
             "swml": swml
         }
@@ -322,7 +322,7 @@ def run_campaign(csv_path, args):
 
         # Step 3: Place call
         print(f"  Calling {lead['phone']}...")
-        result = make_call(lead["phone"], swml)
+        result = make_call(lead["phone"], swml, from_number=args.from_number)
 
         if result["success"]:
             print(f"  ✅ Call initiated: {result['call_id']}")
@@ -376,6 +376,8 @@ if __name__ == "__main__":
     parser.add_argument("--business-hours", action="store_true", help="Only call 8am-4pm Central")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Prompt file path (default: prompts/paul.txt)")
     parser.add_argument("--voice", default=DEFAULT_VOICE, help="TTS voice (default: openai.onyx)")
+    parser.add_argument("--from", dest="from_number", default=None,
+                        help="Outbound caller ID (default: phone_number in config/signalwire.json)")
 
     args = parser.parse_args()
 
