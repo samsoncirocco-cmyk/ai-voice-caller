@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "sections": {
+    "main": [
+      {
+        "ai": {
+          "ai_agent_id": "f2c41814-4a36-436b-b723-71d5cdffec60"
+        }
+      }
+    ]
+  }
+}

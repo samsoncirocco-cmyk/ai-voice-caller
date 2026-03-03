@@ -1,0 +1,35 @@
+{
+  "name": "lead-scorer",
+  "version": "1.0.0",
+  "description": "Scores leads based on AI voice call conversations",
+  "main": "index.js",
+  "scripts": {
+    "start": "functions-framework --target=scoreLead",
+    "test": "jest --coverage",
+    "test:watch": "jest --watch",
+    "lint": "eslint .",
+    "deploy": "bash deploy.sh"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.3.0",
+    "@google-cloud/vertexai": "^1.1.0",
+    "@google-cloud/firestore": "^7.1.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "eslint": "^8.56.0",
+    "supertest": "^6.3.3"
+  },
+  "keywords": [
+    "lead-scoring",
+    "sales",
+    "gemini",
+    "voice-caller",
+    "cloud-function"
+  ],
+  "author": "Fortinet SLED Team",
+  "license": "MIT"
+}

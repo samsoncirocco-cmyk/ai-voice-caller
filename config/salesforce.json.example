@@ -1,0 +1,114 @@
+{
+  "comment": "Salesforce Integration Configuration - Copy to salesforce.json and fill in values",
+  
+  "connection": {
+    "login_url": "https://login.salesforce.com",
+    "sandbox_login_url": "https://test.salesforce.com",
+    "use_sandbox": false
+  },
+  
+  "credentials": {
+    "comment": "Store actual credentials in Secret Manager, not here!",
+    "secret_names": {
+      "username": "sf-username",
+      "password": "sf-password",
+      "security_token": "sf-security-token"
+    }
+  },
+  
+  "task_settings": {
+    "default_owner": null,
+    "use_account_owner": true,
+    "activity_type": "Call",
+    "log_to_account": true,
+    "log_to_contact": true,
+    "log_to_lead": false
+  },
+  
+  "outcome_mapping": {
+    "interested": {
+      "subject_prefix": "AI Call - Interested",
+      "priority": "High",
+      "status": "Not Started",
+      "due_days": 1
+    },
+    "meeting_booked": {
+      "subject_prefix": "AI Call - Meeting Booked",
+      "priority": "High",
+      "status": "Completed",
+      "due_days": 0
+    },
+    "send_info": {
+      "subject_prefix": "AI Call - Send Info Requested",
+      "priority": "Normal",
+      "status": "Not Started",
+      "due_days": 0
+    },
+    "callback_requested": {
+      "subject_prefix": "AI Call - Callback Requested",
+      "priority": "High",
+      "status": "Not Started",
+      "due_days": 1
+    },
+    "not_interested": {
+      "subject_prefix": "AI Call - Not Interested",
+      "priority": "Low",
+      "status": "Completed",
+      "due_days": 0
+    },
+    "voicemail": {
+      "subject_prefix": "AI Call - Left Voicemail",
+      "priority": "Normal",
+      "status": "Completed",
+      "due_days": 0
+    },
+    "no_answer": {
+      "subject_prefix": "AI Call - No Answer",
+      "priority": "Normal",
+      "status": "Not Started",
+      "due_days": 1
+    },
+    "wrong_number": {
+      "subject_prefix": "AI Call - Wrong Number",
+      "priority": "Low",
+      "status": "Completed",
+      "due_days": 0
+    },
+    "do_not_call": {
+      "subject_prefix": "AI Call - DO NOT CALL",
+      "priority": "High",
+      "status": "Completed",
+      "due_days": 0,
+      "create_case": true
+    }
+  },
+  
+  "field_mapping": {
+    "account": {
+      "search_field": "Name",
+      "fallback_search": "BillingCity"
+    },
+    "contact": {
+      "search_field": "Phone",
+      "create_if_not_found": false
+    }
+  },
+  
+  "lead_scoring": {
+    "update_lead_status": true,
+    "status_mapping": {
+      "hot": "Hot",
+      "warm": "Working - Contacted",
+      "qualified": "Working - Contacted",
+      "neutral": "Open - Not Contacted",
+      "cool": "Open - Not Contacted",
+      "cold": "Closed - Not Interested"
+    }
+  },
+  
+  "retry_settings": {
+    "max_retries": 3,
+    "retry_delay_ms": 1000,
+    "exponential_backoff": true
+  }
+}

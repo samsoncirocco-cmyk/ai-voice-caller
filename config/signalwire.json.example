@@ -1,0 +1,15 @@
+{
+  "project_id": "YOUR_SIGNALWIRE_PROJECT_ID",
+  "auth_token": "YOUR_SIGNALWIRE_AUTH_TOKEN",
+  "space_url": "yourspace.signalwire.com",
+  "phone_number": "+1XXXXXXXXXX",
+  "webhook_url": "https://us-central1-tatt-pro.cloudfunctions.net/dialogflow-webhook",
+  "tts_voice": "Polly.Matthew",
+  "notes": {
+    "project_id": "Found in SignalWire Dashboard → API → Credentials",
+    "auth_token": "Found in SignalWire Dashboard → API → Credentials (keep secret!)",
+    "space_url": "Your SignalWire Space URL (e.g., yourcompany.signalwire.com)",
+    "phone_number": "Phone number purchased from SignalWire (E.164 format)",
+    "webhook_url": "Cloud Function URL that bridges SignalWire ↔ Dialogflow CX"
+  }
+}

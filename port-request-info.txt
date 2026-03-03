@@ -1,0 +1,16 @@
+LOA FORM DATA (from T-Mobile Bill)
+
+Telephone Number(s) to be Ported: (480) 616-9129
+Previous Phone Service Provider: T-Mobile
+Long Distance Provider: (same as local)
+Customer Billing Name: Samson Cirocco
+Account Number: 976348428
+Full Installation Address: 20709 N 59TH DR, Glendale AZ 85308-6761
+Mailing Address: (same as installation)
+Alternate Contact: (602) 295-0104 / scirocco@fortinet-us.com
+
+SignalWire Space Name: 6eyes.signalwire.com
+SignalWire Project ID: 6b9a5a5f-7d10-436c-abf0-c623208d76cd
+
+Date: February 11, 2026
+Authorized Signature: Samson Cirocco

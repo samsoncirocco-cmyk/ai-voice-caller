@@ -1,0 +1,13 @@
+{
+  "flow_name": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/bd57d9a4-8c49-4b36-8301-25f43596b69c",
+  "display_name": "follow-up",
+  "pages": {
+    "context-reminder": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/bd57d9a4-8c49-4b36-8301-25f43596b69c/pages/18edb2e1-7860-4534-9fed-0dcda7a36116",
+    "re-explain": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/bd57d9a4-8c49-4b36-8301-25f43596b69c/pages/27906f92-954d-49f7-86e2-edeb60cfde32",
+    "progress-check": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/bd57d9a4-8c49-4b36-8301-25f43596b69c/pages/0990925a-9ae0-48c0-ac89-9ab8542ee500",
+    "question-handling": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/bd57d9a4-8c49-4b36-8301-25f43596b69c/pages/390dd08b-8902-478e-be76-44748faefd2d",
+    "next-steps": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/bd57d9a4-8c49-4b36-8301-25f43596b69c/pages/9846e4c3-6faf-4fb4-8f1b-8bc3cd12e773",
+    "end-call": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/bd57d9a4-8c49-4b36-8301-25f43596b69c/pages/7b1c49ce-d78d-419f-8aff-e578862acbf0"
+  },
+  "tts_voice": "en-US-Neural2-J"
+}

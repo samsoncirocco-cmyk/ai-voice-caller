@@ -1,0 +1,93 @@
+{
+  "project_id": "6b9a5a5f-7d10-436c-abf0-c623208d76cd",
+  "auth_token": "PT4f6bab11e0ba7fcde64b54a8385064e8fae086e359b04be8",
+  "space_url": "6eyes.signalwire.com",
+  "phone_number": "+14806024668",
+  "phone_number_id": "0156ae8e-1d60-4d22-acdb-4f675215eda8",
+  "swaig_webhook_url": "https://us-central1-tatt-pro.cloudfunctions.net/swaigWebhook",
+  "tts_voice": "amazon.Matthew",
+  "ai_agent": {
+    "name": "Fortinet SLED Cold Caller v1",
+    "agent_id": "a774d2ee-dac8-4eb2-9832-845536168e52",
+    "resource_id": "52f7afac-2f34-4f2c-8fb9-0e92149b4e43",
+    "voice": "amazon.Matthew:standard:en-US",
+    "model": "gpt-4.1-nano",
+    "swaig_functions": [
+      "save_contact",
+      "log_call",
+      "score_lead",
+      "save_lead",
+      "schedule_callback",
+      "send_info_email"
+    ],
+    "created_via": "fabric_api",
+    "verified_working": "2026-02-12"
+  },
+  "rate_limits": {
+    "min_interval_seconds": 30,
+    "max_calls_per_hour": 20,
+    "max_calls_per_day": 100,
+    "cooldown_on_failure_seconds": 300,
+    "max_consecutive_failures": 3
+  },
+  "test_call": {
+    "call_id": "c37457ba-6c9a-43a1-b2c9-0098529d25a3",
+    "timestamp": "2026-02-12T23:13:41Z",
+    "to": "+16022950104",
+    "status": "completed",
+    "duration": 10,
+    "agent": "Cold Caller (a774d2ee)",
+    "note": "Verified Cold Caller works - SIP 500 bug was in Discovery Caller"
+  },
+  "notes": {
+    "status": "WORKING - Cold Caller agent verified 2026-02-12",
+    "last_updated": "2026-02-12",
+    "approach": "SignalWire Native AI Agent + SWAIG Cloud Functions (DOE)",
+    "script": "make_call_v4.py",
+    "sip_500_root_cause": {
+      "problem": "Discovery Caller agent caused SIP 500 errors",
+      "cause": "Invalid param 'openai_asr_engine' in agent config crashes SignalWire AI",
+      "solution": "Use Cold Caller agent (no invalid params)",
+      "verified": "2026-02-12 - Cold Caller completed calls successfully"
+    },
+    "deprecated_agents": {
+      "discovery_mode_v1": "f2c41814-4a36-436b-b723-71d5cdffec60 (deleted)",
+      "discovery_caller": "e2c8a606-24ce-4392-a7a8-c11bd79a7a45 (SIP 500 bug - has invalid openai_asr_engine param)",
+      "reason": "Use Cold Caller instead - verified working"
+    },
+    "known_issues": [
+      "Calling API (/api/calling/calls) accepts 200 but calls never materialize",
+      "Compatibility API with external SWML URL fails (expects LaML XML not SWML JSON)",
+      "Fabric API resources are read-only at /api/fabric/resources/{id}, write via /api/fabric/resources/ai_agents",
+      "Rapid test calls trigger platform-level rate limiting (no SIP code, 0 duration)",
+      "SIP 500 can occur if agent has invalid params like 'openai_asr_engine'",
+      "Fabric AI agent /execute URLs return 404 when called externally - use Calling API with inline SWML instead"
+    ],
+    "sip_500_fix": {
+      "date": "2026-02-12",
+      "problem": "SIP 500 errors when using Compatibility API with Fabric AI agent /execute URL",
+      "root_cause": "The /api/fabric/resources/{id}/execute URL doesn't serve valid SWML when called externally",
+      "solution": "Use Calling API (/api/calling/calls) with inline SWML instead of Compatibility API",
+      "working_script": "make_call_v5.py",
+      "deprecated_script": "make_call_v4.py (uses broken /execute URL)"
+    }
+  },
+  "cold_call_agent": {
+    "name": "Fortinet SLED Cold Caller v1",
+    "agent_id": "a774d2ee-dac8-4eb2-9832-845536168e52",
+    "resource_id": "52f7afac-2f34-4f2c-8fb9-0e92149b4e43",
+    "voice": "amazon.Matthew:standard:en-US",
+    "model": "gpt-4.1-nano",
+    "swaig_functions": [
+      "save_contact",
+      "log_call",
+      "score_lead",
+      "save_lead",
+      "schedule_callback",
+      "send_info_email"
+    ],
+    "created_via": "fabric_api"
+  },
+  "phone_number_old": "+16028985026",
+  "phone_number_old_id": "64c2447d-8ed2-4b9d-be7a-05cc7291e917"
+}

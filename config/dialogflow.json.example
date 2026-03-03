@@ -1,0 +1,94 @@
+{
+  "comment": "Dialogflow CX Configuration - Copy to dialogflow.json and fill in values",
+  
+  "project": {
+    "project_id": "tatt-pro",
+    "location": "us-central1",
+    "agent_id": "YOUR_AGENT_ID"
+  },
+  
+  "agent": {
+    "display_name": "Fortinet-SLED-Voice-Caller",
+    "default_language": "en",
+    "time_zone": "America/Phoenix"
+  },
+  
+  "speech_settings": {
+    "speech_model": "phone_call",
+    "no_speech_timeout": "5s",
+    "endpointer_sensitivity": 50,
+    "enable_speech_adaptation": true
+  },
+  
+  "text_to_speech": {
+    "voice_name": "en-US-Neural2-D",
+    "ssml_gender": "MALE",
+    "speaking_rate": 1.0,
+    "pitch": 0.0,
+    "volume_gain_db": 0.0,
+    "alternative_voices": {
+      "female": "en-US-Neural2-F",
+      "studio_male": "en-US-Studio-O",
+      "studio_female": "en-US-Studio-Q"
+    }
+  },
+  
+  "webhooks": {
+    "gemini_responder": {
+      "name": "gemini-responder",
+      "url": "https://us-central1-tatt-pro.cloudfunctions.net/gemini-responder",
+      "timeout": "30s"
+    },
+    "salesforce_task": {
+      "name": "salesforce-task",
+      "url": "https://us-central1-tatt-pro.cloudfunctions.net/salesforce-task",
+      "timeout": "30s"
+    },
+    "calendar_booking": {
+      "name": "calendar-booking",
+      "url": "https://us-central1-tatt-pro.cloudfunctions.net/calendar-booking",
+      "timeout": "30s"
+    },
+    "call_logger": {
+      "name": "call-logger",
+      "url": "https://us-central1-tatt-pro.cloudfunctions.net/call-logger",
+      "timeout": "10s"
+    },
+    "lead_scorer": {
+      "name": "lead-scorer",
+      "url": "https://us-central1-tatt-pro.cloudfunctions.net/lead-scorer",
+      "timeout": "30s"
+    }
+  },
+  
+  "flows": {
+    "default_start_flow": "cold-calling",
+    "available_flows": [
+      "cold-calling",
+      "follow-up",
+      "appointment-setting",
+      "lead-qualification",
+      "information-delivery"
+    ]
+  },
+  
+  "integrations": {
+    "telephony_gateway": {
+      "provider": "signalwire",
+      "sip_enabled": true
+    },
+    "analytics": {
+      "stackdriver_logging": true,
+      "interaction_logging": true
+    }
+  },
+  
+  "session_parameters": {
+    "default_values": {
+      "contact_name": "valued customer",
+      "account_name": "your organization",
+      "state": "Arizona",
+      "use_case": "cold_calling"
+    }
+  }
+}

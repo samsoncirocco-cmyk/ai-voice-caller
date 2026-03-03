@@ -1,0 +1,448 @@
+{
+  "intents": [
+    {
+      "name": "intent.confirm-yes",
+      "displayName": "Confirm Yes",
+      "trainingPhrases": [
+        "yes",
+        "yeah",
+        "yep",
+        "sure",
+        "okay",
+        "ok",
+        "yes please",
+        "that works",
+        "sounds good",
+        "absolutely",
+        "definitely",
+        "of course",
+        "that's fine",
+        "go ahead",
+        "I'd like that",
+        "yes I am",
+        "that's right",
+        "correct",
+        "affirmative",
+        "I agree",
+        "works for me",
+        "let's do it",
+        "I'm in",
+        "sign me up",
+        "count me in"
+      ]
+    },
+    {
+      "name": "intent.confirm-no",
+      "displayName": "Confirm No",
+      "trainingPhrases": [
+        "no",
+        "nope",
+        "no thanks",
+        "I'm good",
+        "no thank you",
+        "not right now",
+        "I'll pass",
+        "not interested",
+        "I don't think so",
+        "that's okay",
+        "not at this time",
+        "maybe later",
+        "negative",
+        "decline",
+        "I'd rather not",
+        "skip that",
+        "not today"
+      ]
+    },
+    {
+      "name": "intent.interested",
+      "displayName": "Interested",
+      "trainingPhrases": [
+        "I'm interested",
+        "tell me more",
+        "that sounds interesting",
+        "I'd like to learn more",
+        "go on",
+        "I'm curious",
+        "what else",
+        "keep talking",
+        "I'd like to hear more",
+        "that's intriguing",
+        "we might be interested",
+        "could you elaborate",
+        "explain more",
+        "I want to know more",
+        "this could work for us"
+      ]
+    },
+    {
+      "name": "intent.not-interested",
+      "displayName": "Not Interested",
+      "trainingPhrases": [
+        "not interested",
+        "we're not interested",
+        "I'm not interested",
+        "no thanks",
+        "we're good",
+        "we don't need that",
+        "not for us",
+        "we're all set",
+        "we're happy with what we have",
+        "not looking to change",
+        "not a priority",
+        "not in the market",
+        "waste of my time",
+        "please don't call again",
+        "stop calling",
+        "take me off your list"
+      ]
+    },
+    {
+      "name": "intent.busy",
+      "displayName": "Busy",
+      "trainingPhrases": [
+        "I'm busy",
+        "bad time",
+        "in a meeting",
+        "can't talk right now",
+        "call me back",
+        "not a good time",
+        "I'm in the middle of something",
+        "I have a meeting",
+        "can you call later",
+        "I'm about to go into a meeting",
+        "running late",
+        "I only have a second",
+        "make it quick",
+        "I don't have time right now"
+      ]
+    },
+    {
+      "name": "intent.who-is-this",
+      "displayName": "Who Is This",
+      "trainingPhrases": [
+        "who is this",
+        "who's calling",
+        "who am I speaking with",
+        "who are you",
+        "what company",
+        "what is this about",
+        "why are you calling",
+        "what's this regarding",
+        "I don't recognize this number",
+        "how did you get my number",
+        "what do you want"
+      ]
+    },
+    {
+      "name": "intent.send-info",
+      "displayName": "Send Info",
+      "trainingPhrases": [
+        "just send me an email",
+        "email me",
+        "send me some info",
+        "send me information",
+        "can you email me",
+        "put something in writing",
+        "send me something",
+        "mail me some info",
+        "I'd rather read about it",
+        "send me a link",
+        "send me the details",
+        "just send me the info"
+      ]
+    },
+    {
+      "name": "intent.questions",
+      "displayName": "Questions",
+      "trainingPhrases": [
+        "I have a question",
+        "can I ask something",
+        "what about",
+        "how does that work",
+        "tell me about",
+        "what is",
+        "how much",
+        "what's the cost",
+        "what's the price",
+        "how long",
+        "when can",
+        "where is",
+        "who handles"
+      ]
+    },
+    {
+      "name": "intent.callback-time",
+      "displayName": "Callback Time",
+      "trainingPhrases": [
+        "call me tomorrow",
+        "try me next week",
+        "call back Monday",
+        "how about Tuesday",
+        "next month",
+        "in a few weeks",
+        "after the holidays",
+        "try me in the afternoon",
+        "morning would be better",
+        "call me after 2",
+        "try me before noon",
+        "early next week"
+      ],
+      "parameters": [
+        {
+          "id": "callback-datetime",
+          "entityType": "@sys.date-time",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "intent.do-not-call",
+      "displayName": "Do Not Call",
+      "trainingPhrases": [
+        "take me off your list",
+        "remove me from your list",
+        "stop calling me",
+        "don't call me again",
+        "do not call",
+        "unsubscribe",
+        "opt out",
+        "never call again",
+        "I want off your list",
+        "remove my number",
+        "add me to your do not call list",
+        "put me on do not call"
+      ]
+    },
+    {
+      "name": "intent.has-solution",
+      "displayName": "Has Solution",
+      "trainingPhrases": [
+        "we have a backup",
+        "we use cell phones",
+        "we have redundancy",
+        "they keep working",
+        "we have a generator",
+        "we have failover",
+        "our phones still work",
+        "we're covered",
+        "we have that handled",
+        "our vendor takes care of that",
+        "we've got a plan"
+      ]
+    },
+    {
+      "name": "intent.no-solution",
+      "displayName": "No Solution",
+      "trainingPhrases": [
+        "they go down",
+        "we lose phones",
+        "phones don't work",
+        "nothing happens",
+        "we just wait",
+        "we're stuck",
+        "we can't make calls",
+        "no dial tone",
+        "everything stops",
+        "we use our personal phones",
+        "that's a problem actually",
+        "we've had issues with that"
+      ]
+    },
+    {
+      "name": "intent.dont-know",
+      "displayName": "Don't Know",
+      "trainingPhrases": [
+        "I don't know",
+        "I'm not sure",
+        "good question",
+        "I'd have to check",
+        "let me look into that",
+        "I have no idea",
+        "never thought about it",
+        "I haven't considered that",
+        "that's a good point",
+        "I wouldn't know"
+      ]
+    },
+    {
+      "name": "intent.bad-timing",
+      "displayName": "Bad Timing",
+      "trainingPhrases": [
+        "not right now",
+        "maybe later",
+        "not this year",
+        "budget is set",
+        "we just bought",
+        "we just renewed",
+        "maybe next year",
+        "not in our budget",
+        "bad timing",
+        "we're in the middle of something",
+        "we have other priorities"
+      ]
+    },
+    {
+      "name": "intent.not-priority",
+      "displayName": "Not Priority",
+      "trainingPhrases": [
+        "not a priority",
+        "not on our radar",
+        "we have bigger issues",
+        "that's not important right now",
+        "we have other things to worry about",
+        "low on the list",
+        "not urgent",
+        "not something we're looking at"
+      ]
+    },
+    {
+      "name": "intent.time-morning",
+      "displayName": "Time Morning",
+      "trainingPhrases": [
+        "morning",
+        "mornings",
+        "in the morning",
+        "AM",
+        "before noon",
+        "early",
+        "morning works better",
+        "I'm usually free in the morning",
+        "morning is best"
+      ]
+    },
+    {
+      "name": "intent.time-afternoon",
+      "displayName": "Time Afternoon",
+      "trainingPhrases": [
+        "afternoon",
+        "afternoons",
+        "in the afternoon",
+        "PM",
+        "after lunch",
+        "after noon",
+        "later in the day",
+        "afternoon works better",
+        "I'm usually free in the afternoon"
+      ]
+    },
+    {
+      "name": "intent.specific-time",
+      "displayName": "Specific Time",
+      "trainingPhrases": [
+        "how about Monday at 10",
+        "Tuesday at 2 works",
+        "next Wednesday",
+        "this Friday afternoon",
+        "Thursday at 3pm",
+        "tomorrow at 9"
+      ],
+      "parameters": [
+        {
+          "id": "datetime",
+          "entityType": "@sys.date-time",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "intent.read-email",
+      "displayName": "Read Email",
+      "trainingPhrases": [
+        "yes I saw it",
+        "I read it",
+        "I looked at it",
+        "I got your email",
+        "yeah I saw that",
+        "I read through it",
+        "I glanced at it",
+        "I remember that",
+        "yes you sent that"
+      ]
+    },
+    {
+      "name": "intent.no-email",
+      "displayName": "No Email",
+      "trainingPhrases": [
+        "no I didn't see it",
+        "I missed it",
+        "must have missed that",
+        "I don't remember",
+        "didn't get to it",
+        "went to spam",
+        "I get a lot of emails",
+        "no I didn't read it",
+        "when did you send it"
+      ]
+    },
+    {
+      "name": "intent.transfer",
+      "displayName": "Transfer",
+      "trainingPhrases": [
+        "let me transfer you",
+        "I'll connect you",
+        "hold on I'll get them",
+        "one moment",
+        "let me find them",
+        "I'll put you through",
+        "transferring now"
+      ]
+    },
+    {
+      "name": "intent.not-available",
+      "displayName": "Not Available",
+      "trainingPhrases": [
+        "they're not available",
+        "they're out",
+        "they don't work here anymore",
+        "wrong department",
+        "that's not the right person",
+        "they're on vacation",
+        "they left the company",
+        "no one by that name here"
+      ]
+    },
+    {
+      "name": "intent.tell-me-more",
+      "displayName": "Tell Me More",
+      "trainingPhrases": [
+        "tell me more",
+        "can you explain",
+        "what do you mean",
+        "go on",
+        "elaborate",
+        "give me more details",
+        "what exactly",
+        "I need more information"
+      ]
+    },
+    {
+      "name": "intent.provide-timeline",
+      "displayName": "Provide Timeline",
+      "trainingPhrases": [
+        "our contract ends in March",
+        "we renew in June",
+        "next fiscal year",
+        "Q3",
+        "Q4",
+        "around budget time",
+        "when school starts",
+        "July",
+        "next spring",
+        "end of the year"
+      ]
+    },
+    {
+      "name": "intent.no-timeline",
+      "displayName": "No Timeline",
+      "trainingPhrases": [
+        "no timeline",
+        "not sure when",
+        "no plans",
+        "we don't have a timeline",
+        "whenever it breaks",
+        "not planning anything"
+      ]
+    }
+  ]
+}

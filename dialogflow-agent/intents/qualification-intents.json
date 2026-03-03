@@ -1,0 +1,365 @@
+{
+  "intents": [
+    {
+      "name": "intent.system-cisco",
+      "displayName": "System Cisco",
+      "trainingPhrases": [
+        "Cisco",
+        "we use Cisco",
+        "Cisco phones",
+        "Cisco call manager",
+        "CUCM",
+        "Cisco UC",
+        "Cisco unified",
+        "Webex calling"
+      ]
+    },
+    {
+      "name": "intent.system-avaya",
+      "displayName": "System Avaya",
+      "trainingPhrases": [
+        "Avaya",
+        "we use Avaya",
+        "Avaya IP Office",
+        "Avaya Aura",
+        "Avaya phones"
+      ]
+    },
+    {
+      "name": "intent.system-teams",
+      "displayName": "System Teams",
+      "trainingPhrases": [
+        "Microsoft Teams",
+        "Teams",
+        "Teams calling",
+        "Teams phone",
+        "we use Teams",
+        "Office 365 phones"
+      ]
+    },
+    {
+      "name": "intent.system-cloud",
+      "displayName": "System Cloud",
+      "trainingPhrases": [
+        "cloud phone",
+        "VoIP",
+        "hosted",
+        "RingCentral",
+        "8x8",
+        "Zoom phone",
+        "GoTo",
+        "Dialpad",
+        "Vonage",
+        "cloud-based",
+        "SaaS phone"
+      ]
+    },
+    {
+      "name": "intent.system-analog",
+      "displayName": "System Analog",
+      "trainingPhrases": [
+        "analog phones",
+        "old PBX",
+        "traditional phones",
+        "landlines",
+        "copper lines",
+        "we have an old system",
+        "legacy PBX",
+        "on-premise PBX"
+      ]
+    },
+    {
+      "name": "intent.age-old",
+      "displayName": "Age Old",
+      "trainingPhrases": [
+        "5 years",
+        "6 years",
+        "7 years",
+        "8 years",
+        "10 years",
+        "over 5 years",
+        "pretty old",
+        "been a while",
+        "a long time",
+        "too long",
+        "ancient",
+        "outdated"
+      ]
+    },
+    {
+      "name": "intent.age-new",
+      "displayName": "Age New",
+      "trainingPhrases": [
+        "brand new",
+        "just got it",
+        "last year",
+        "couple years",
+        "2 years",
+        "1 year",
+        "recently upgraded",
+        "fairly new",
+        "not that old"
+      ]
+    },
+    {
+      "name": "intent.has-issues",
+      "displayName": "Has Issues",
+      "trainingPhrases": [
+        "yes we have issues",
+        "yes definitely",
+        "support is ending",
+        "parts are hard to get",
+        "it's been acting up",
+        "constant problems",
+        "very frustrating",
+        "yes it's a headache",
+        "we have outages"
+      ]
+    },
+    {
+      "name": "intent.no-issues",
+      "displayName": "No Issues",
+      "trainingPhrases": [
+        "no issues",
+        "it works fine",
+        "no problems",
+        "we're happy with it",
+        "no complaints",
+        "running smoothly",
+        "works great"
+      ]
+    },
+    {
+      "name": "intent.large-org",
+      "displayName": "Large Organization",
+      "trainingPhrases": [
+        "about 100",
+        "over 100",
+        "150",
+        "200",
+        "300",
+        "500",
+        "a few hundred",
+        "several hundred",
+        "over a hundred",
+        "around 150"
+      ]
+    },
+    {
+      "name": "intent.medium-org",
+      "displayName": "Medium Organization",
+      "trainingPhrases": [
+        "about 50",
+        "around 75",
+        "40 or so",
+        "50 to 100",
+        "maybe 60",
+        "around 80"
+      ]
+    },
+    {
+      "name": "intent.small-org",
+      "displayName": "Small Organization",
+      "trainingPhrases": [
+        "about 10",
+        "15 or so",
+        "20",
+        "25",
+        "less than 25",
+        "small",
+        "not many",
+        "under 20"
+      ]
+    },
+    {
+      "name": "intent.yes-planning",
+      "displayName": "Yes Planning",
+      "trainingPhrases": [
+        "yes we are",
+        "yes planning changes",
+        "yes looking to upgrade",
+        "we're evaluating",
+        "we're in the market",
+        "actively looking",
+        "yes definitely",
+        "that's why I'm talking to you",
+        "we're putting out an RFP",
+        "we're taking bids"
+      ]
+    },
+    {
+      "name": "intent.maybe-planning",
+      "displayName": "Maybe Planning",
+      "trainingPhrases": [
+        "maybe",
+        "possibly",
+        "we might be",
+        "depends",
+        "depends on budget",
+        "if funding comes through",
+        "we're considering it",
+        "not sure yet",
+        "we're discussing it"
+      ]
+    },
+    {
+      "name": "intent.no-planning",
+      "displayName": "No Planning",
+      "trainingPhrases": [
+        "no plans",
+        "not planning changes",
+        "we're not looking",
+        "no changes planned",
+        "we're staying put",
+        "sticking with what we have",
+        "not in the near future"
+      ]
+    },
+    {
+      "name": "intent.case-study",
+      "displayName": "Case Study",
+      "trainingPhrases": [
+        "case study",
+        "customer stories",
+        "who else uses it",
+        "references",
+        "examples",
+        "success stories",
+        "other schools",
+        "other districts"
+      ]
+    },
+    {
+      "name": "intent.pricing",
+      "displayName": "Pricing",
+      "trainingPhrases": [
+        "pricing",
+        "how much does it cost",
+        "price list",
+        "what's the cost",
+        "pricing information",
+        "quote",
+        "ballpark price",
+        "rough cost"
+      ]
+    },
+    {
+      "name": "intent.technical",
+      "displayName": "Technical",
+      "trainingPhrases": [
+        "technical specs",
+        "data sheet",
+        "specifications",
+        "how it works technically",
+        "system requirements",
+        "integration details",
+        "architecture"
+      ]
+    },
+    {
+      "name": "intent.add-attendee",
+      "displayName": "Add Attendee",
+      "trainingPhrases": [
+        "yes add someone",
+        "include my colleague",
+        "add my IT director",
+        "I'd like to include",
+        "add my boss",
+        "include the director"
+      ]
+    },
+    {
+      "name": "intent.just-me",
+      "displayName": "Just Me",
+      "trainingPhrases": [
+        "just me",
+        "no just myself",
+        "I'll be the only one",
+        "solo",
+        "I'll attend alone",
+        "that's it"
+      ]
+    },
+    {
+      "name": "intent.none-work",
+      "displayName": "None Work",
+      "trainingPhrases": [
+        "none of those work",
+        "I'm not available then",
+        "those don't work for me",
+        "I'm busy all those times",
+        "different time",
+        "another day"
+      ]
+    },
+    {
+      "name": "intent.focus-area",
+      "displayName": "Focus Area",
+      "trainingPhrases": [
+        "focus on pricing",
+        "talk about integration",
+        "cover the technical side",
+        "explain survivability",
+        "show me admin features",
+        "discuss migration",
+        "how it works with our current setup"
+      ]
+    },
+    {
+      "name": "intent.general",
+      "displayName": "General",
+      "trainingPhrases": [
+        "just an overview",
+        "general demo",
+        "show me everything",
+        "the standard demo",
+        "whatever you normally cover"
+      ]
+    },
+    {
+      "name": "intent.who-is-partner",
+      "displayName": "Who Is Partner",
+      "trainingPhrases": [
+        "who is High Point",
+        "tell me about the partner",
+        "who are they",
+        "what's High Point Networks",
+        "is that a reseller"
+      ]
+    },
+    {
+      "name": "intent.explain-change",
+      "displayName": "Explain Change",
+      "trainingPhrases": [
+        "we went a different direction",
+        "we chose someone else",
+        "budget got cut",
+        "priorities changed",
+        "we're going with Teams",
+        "we decided to wait"
+      ]
+    },
+    {
+      "name": "intent.just-not-interested",
+      "displayName": "Just Not Interested",
+      "trainingPhrases": [
+        "just not interested",
+        "nothing specific",
+        "just not for us",
+        "no particular reason",
+        "just not a fit"
+      ]
+    },
+    {
+      "name": "intent.send-more-info",
+      "displayName": "Send More Info",
+      "trainingPhrases": [
+        "send me more info",
+        "can you send more",
+        "I'd like to read more",
+        "email me more details",
+        "send additional info"
+      ]
+    }
+  ]
+}

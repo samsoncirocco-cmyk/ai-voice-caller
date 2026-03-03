@@ -1,0 +1,260 @@
+{
+  "name": "follow-up",
+  "displayName": "Follow Up",
+  "description": "Follow-up flow for prospects who received an email or prior outreach.",
+  "transitionRoutes": [
+    {
+      "condition": "true",
+      "triggerFulfillment": {
+        "messages": [
+          {
+            "text": {
+              "text": ["Hi $session.params.contact_name, this is Paul from Fortinet. I sent you an email last week about $session.params.email_topic. Did you get a chance to look at it?"]
+            }
+          }
+        ],
+        "webhook": "projects/tatt-pro/locations/us-central1/agents/fortinet-sled-voice-caller/webhooks/call-logger",
+        "tag": "log_call_start"
+      },
+      "targetPage": "check-email-status"
+    }
+  ],
+  "pages": [
+    {
+      "name": "check-email-status",
+      "displayName": "Check Email Status",
+      "transitionRoutes": [
+        {
+          "intent": "intent.read-email",
+          "triggerFulfillment": {
+            "messages": [
+              {
+                "text": {
+                  "text": ["Great! What did you think? Any questions I can answer?"]
+                }
+              }
+            ]
+          },
+          "targetPage": "discuss-email"
+        },
+        {
+          "intent": "intent.no-email",
+          "triggerFulfillment": {
+            "messages": [
+              {
+                "text": {
+                  "text": ["No worries, inboxes are crazy. Quick summary: we're helping $session.params.account_type organizations in $session.params.state with voice system modernization. The key benefit is local survivability - your phones keep working even if the internet goes down. Worth a 15-minute call to explore?"]
+                }
+              }
+            ]
+          },
+          "targetPage": "pitch-meeting"
+        },
+        {
+          "intent": "intent.who-is-this",
+          "triggerFulfillment": {
+            "messages": [
+              {
+                "text": {
+                  "text": ["I'm Paul, a Territory Account Manager at Fortinet. We specialize in secure networking and voice solutions for education and government. I reached out because I thought our FortiVoice solution might be a good fit for $session.params.account_name."]
+                }
+              }
+            ]
+          },
+          "targetPage": "pitch-meeting"
+        },
+        {
+          "intent": "intent.busy",
+          "targetFlow": "cold-calling",
+          "targetPage": "callback-request"
+        }
+      ]
+    },
+    {
+      "name": "discuss-email",
+      "displayName": "Discuss Email",
+      "transitionRoutes": [
+        {
+          "intent": "intent.interested",
+          "targetFlow": "cold-calling",
+          "targetPage": "book-meeting"
+        },
+        {
+          "intent": "intent.questions",
+          "triggerFulfillment": {
+            "webhook": "projects/tatt-pro/locations/us-central1/agents/fortinet-sled-voice-caller/webhooks/gemini-responder"
+          }
+        },
+        {
+          "intent": "intent.not-interested",
+          "triggerFulfillment": {
+            "messages": [
+              {
+                "text": {
+                  "text": ["Understood. Can I ask - is there a better time to revisit this? Maybe when your current contract renews?"]
+                }
+              }
+            ]
+          },
+          "targetPage": "explore-timing"
+        },
+        {
+          "intent": "intent.send-more-info",
+          "triggerFulfillment": {
+            "messages": [
+              {
+                "text": {
+                  "text": ["Absolutely. What specifically would be most helpful? I can send a case study, pricing overview, or technical specs."]
+                }
+              }
+            ]
+          },
+          "targetPage": "info-type"
+        }
+      ]
+    },
+    {
+      "name": "pitch-meeting",
+      "displayName": "Pitch Meeting",
+      "transitionRoutes": [
+        {
+          "intent": "intent.confirm-yes",
+          "targetFlow": "cold-calling",
+          "targetPage": "book-meeting"
+        },
+        {
+          "intent": "intent.confirm-no",
+          "targetPage": "explore-timing"
+        },
+        {
+          "intent": "intent.questions",
+          "triggerFulfillment": {
+            "webhook": "projects/tatt-pro/locations/us-central1/agents/fortinet-sled-voice-caller/webhooks/gemini-responder"
+          }
+        }
+      ]
+    },
+    {
+      "name": "explore-timing",
+      "displayName": "Explore Timing",
+      "entryFulfillment": {
+        "messages": [
+          {
+            "text": {
+              "text": ["When does your current voice contract expire? Or is there a particular time of year when you typically evaluate new solutions?"]
+            }
+          }
+        ]
+      },
+      "transitionRoutes": [
+        {
+          "intent": "intent.provide-timeline",
+          "triggerFulfillment": {
+            "messages": [
+              {
+                "text": {
+                  "text": ["Perfect. I'll make a note to reach back out around that time. In the meantime, can I send you something to keep on file?"]
+                }
+              }
+            ]
+          },
+          "targetFlow": "cold-calling",
+          "targetPage": "collect-email"
+        },
+        {
+          "intent": "intent.no-timeline",
+          "triggerFulfillment": {
+            "messages": [
+              {
+                "text": {
+                  "text": ["No problem. Would it be okay if I checked in again in about 6 months?"]
+                }
+              }
+            ]
+          },
+          "targetPage": "confirm-followup"
+        }
+      ]
+    },
+    {
+      "name": "info-type",
+      "displayName": "Info Type",
+      "transitionRoutes": [
+        {
+          "intent": "intent.case-study",
+          "triggerFulfillment": {
+            "setParameterActions": [
+              {
+                "parameter": "info_type",
+                "value": "case_study"
+              }
+            ]
+          },
+          "targetFlow": "cold-calling",
+          "targetPage": "collect-email"
+        },
+        {
+          "intent": "intent.pricing",
+          "triggerFulfillment": {
+            "setParameterActions": [
+              {
+                "parameter": "info_type",
+                "value": "pricing"
+              }
+            ]
+          },
+          "targetFlow": "cold-calling",
+          "targetPage": "collect-email"
+        },
+        {
+          "intent": "intent.technical",
+          "triggerFulfillment": {
+            "setParameterActions": [
+              {
+                "parameter": "info_type",
+                "value": "technical"
+              }
+            ]
+          },
+          "targetFlow": "cold-calling",
+          "targetPage": "collect-email"
+        }
+      ]
+    },
+    {
+      "name": "confirm-followup",
+      "displayName": "Confirm Followup",
+      "transitionRoutes": [
+        {
+          "intent": "intent.confirm-yes",
+          "triggerFulfillment": {
+            "messages": [
+              {
+                "text": {
+                  "text": ["Great. I'll reach out then. Thanks for your time today!"]
+                }
+              }
+            ],
+            "setParameterActions": [
+              {
+                "parameter": "call_outcome",
+                "value": "callback_requested"
+              },
+              {
+                "parameter": "callback_months",
+                "value": "6"
+              }
+            ]
+          },
+          "targetFlow": "cold-calling",
+          "targetPage": "end-callback"
+        },
+        {
+          "intent": "intent.confirm-no",
+          "targetFlow": "cold-calling",
+          "targetPage": "end-not-interested"
+        }
+      ]
+    }
+  ]
+}

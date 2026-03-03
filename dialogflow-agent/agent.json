@@ -1,0 +1,44 @@
+{
+  "displayName": "Fortinet-SLED-Voice-Caller",
+  "defaultLanguageCode": "en",
+  "supportedLanguageCodes": ["en"],
+  "timeZone": "America/Phoenix",
+  "description": "AI Voice Caller for Fortinet SLED prospecting. Handles cold calling, follow-ups, appointment setting, lead qualification, and information delivery.",
+  "speechToTextSettings": {
+    "enableSpeechAdaptation": true
+  },
+  "startFlow": "projects/tatt-pro/locations/us-central1/agents/fortinet-sled-voice-caller/flows/cold-calling",
+  "advancedSettings": {
+    "speechSettings": {
+      "endpointerSensitivity": 50,
+      "noSpeechTimeout": "5s",
+      "useTimeoutBasedEndpointing": true,
+      "models": {
+        "phone_call": "phone_call"
+      }
+    },
+    "dtmfSettings": {
+      "enabled": true,
+      "maxDigits": 10,
+      "finishDigit": "#"
+    },
+    "loggingSettings": {
+      "enableStackdriverLogging": true,
+      "enableInteractionLogging": true
+    }
+  },
+  "textToSpeechSettings": {
+    "synthesizeSpeechConfigs": {
+      "en": {
+        "voice": {
+          "name": "en-US-Neural2-D",
+          "ssmlGender": "MALE"
+        },
+        "speakingRate": 1.0,
+        "pitch": 0.0,
+        "volumeGainDb": 0.0
+      }
+    }
+  },
+  "securitySettings": "projects/tatt-pro/locations/us-central1/securitySettings/default"
+}

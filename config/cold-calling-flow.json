@@ -1,0 +1,16 @@
+{
+  "flow_name": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/7a1cc093-f0bc-4631-8757-c32f80801ca8",
+  "display_name": "cold-calling",
+  "pages": {
+    "greeting": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/7a1cc093-f0bc-4631-8757-c32f80801ca8/pages/197f8bd4-89f9-455c-833c-f327dc8849c1",
+    "gatekeeper": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/7a1cc093-f0bc-4631-8757-c32f80801ca8/pages/c0c4931e-1014-4366-a129-dd286816be2e",
+    "decision-maker": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/7a1cc093-f0bc-4631-8757-c32f80801ca8/pages/9247d5b3-002f-49d3-8aa6-129eea41f602",
+    "killer-question": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/7a1cc093-f0bc-4631-8757-c32f80801ca8/pages/07893555-77e6-41cc-b8be-83c67aab8189",
+    "interest-assessment": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/7a1cc093-f0bc-4631-8757-c32f80801ca8/pages/39b19fe7-2ea7-4604-b820-3823bb6400a6",
+    "objection-handling": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/7a1cc093-f0bc-4631-8757-c32f80801ca8/pages/a1183ce1-072d-4fca-b3a8-3e306c7b5304",
+    "next-steps": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/7a1cc093-f0bc-4631-8757-c32f80801ca8/pages/16e66c3b-b235-4808-bc22-865428d848e5",
+    "schedule-meeting": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/7a1cc093-f0bc-4631-8757-c32f80801ca8/pages/77cf827f-6215-4563-9587-d4ecdaa1aac2",
+    "end-call": "projects/tatt-pro/locations/us-central1/agents/35ba664e-b443-4b8e-bf60-b9c445b31273/flows/7a1cc093-f0bc-4631-8757-c32f80801ca8/pages/59e6f4c3-6f8e-4aac-aba3-bca4a0bd9771"
+  },
+  "tts_voice": "en-US-Neural2-J"
+}
