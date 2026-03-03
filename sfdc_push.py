@@ -106,15 +106,40 @@ def _query_account_by_phone(last10: str) -> Optional[Dict[str, str]]:
         return None
 
 
-def _create_task(account_id: str, date_str: str, summary: str) -> Optional[str]:
-    subject = f"AI Voice Caller - Paul - {date_str}"
+def _parse_disposition(summary: str) -> str:
+    """Extract Call outcome line and map to SF CallDisposition picklist."""
+    valid = {
+        "connected": "Connected",
+        "left voicemail": "Left Voicemail",
+        "voicemail": "Left Voicemail",
+        "no answer": "No Answer",
+        "wrong number": "Wrong Number",
+        "not interested": "Not Interested",
+        "meeting booked": "Meeting Booked",
+    }
+    for line in summary.splitlines():
+        if line.lower().startswith("- call outcome:"):
+            raw = line.split(":", 1)[-1].strip().lower()
+            for key, val in valid.items():
+                if key in raw:
+                    return val
+    return "Connected"  # default
+
+
+def _create_task(account_id: str, date_str: str, summary: str,
+                 account_name: str = "") -> Optional[str]:
+    disposition = _parse_disposition(summary)
+    label = f" - {account_name}" if account_name else ""
+    subject = f"Paul (AI) - {disposition}{label} - {date_str}"
     values = (
         f"Subject='{subject}' "
         "Status='Completed' "
         f"ActivityDate='{date_str}' "
         f"WhatId='{account_id}' "
         "Type='Call' "
-        f"Description='{summary.replace("'", "\\'")}'"
+        f"CallType='Outbound' "
+        f"CallDisposition='{disposition}' "
+        f"Description='{summary.replace(chr(39), chr(92)+chr(39))}'"
     )
     cmd = [
         "sf",
@@ -190,10 +215,11 @@ def main() -> int:
         summary = item.get("summary") or ""
 
         if args.dry_run:
-            print(f"Dry-run: would create Task for call_id={call_id} account_id={account.get('Id')}")
+            disposition = _parse_disposition(summary)
+            print(f"Dry-run: {disposition} | {account.get('Name','?')} ({account.get('Id')}) | call_id={call_id}")
             continue
 
-        task_id = _create_task(account["Id"], date_str, summary)
+        task_id = _create_task(account["Id"], date_str, summary, account.get("Name", ""))
         if not task_id:
             errors += 1
             continue

@@ -290,18 +290,19 @@ def build_dynamic_swml(context, base_prompt_path="prompts/paul.txt",
 
     post_prompt = (
         "Summarize the call in this exact format:\n"
+        "- Call outcome: [Connected / Left Voicemail / No Answer / Wrong Number / Not Interested / Meeting Booked]\n"
         "- Spoke with: [name or 'unknown']\n"
         "- Role: [title/role]\n"
         "- Organization: [org name]\n"
-        "- Current setup: [what they said about their current IT/security setup]\n"
-        "- Pain points: [any frustrations or challenges mentioned]\n"
-        "- Current vendor: [if mentioned]\n"
+        "- Current vendor: [if mentioned, else 'unknown']\n"
+        "- Current setup: [what they said about their IT/security environment]\n"
+        "- Pain points: [frustrations or challenges mentioned]\n"
         "- Interest level: [1-5]\n"
         "- Follow-up: [what was agreed, or 'none']\n"
-        "- Meeting booked: [yes/no, and datetime if yes]\n"
-        "- Contact email: [if collected]\n"
-        "- Contact direct phone: [if collected]\n"
-        "- Gatekeeper name: [if applicable]\n"
+        "- Meeting booked: [yes/no — if yes, include day and time]\n"
+        "- Contact email: [if collected, else 'none']\n"
+        "- Contact direct phone: [if collected, else 'none']\n"
+        "- Gatekeeper name: [if applicable, else 'none']\n"
         "- Notes: [anything else useful]"
     )
 
