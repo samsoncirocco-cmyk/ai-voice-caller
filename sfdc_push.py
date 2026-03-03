@@ -2,13 +2,19 @@
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
-SF_ALIAS = "fortinet"
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT_DIR / "execution"))
+
+from sfdc_guardrails import normalize_phone_digits, resolve_target_org, validate_required_fields
+
+SF_ALIAS = resolve_target_org("fortinet")
 SUMMARIES_PATH = "logs/call_summaries.jsonl"
 STATE_PATH = "logs/sfdc-push-state.json"
 
@@ -32,12 +38,8 @@ def _run_sf(args: List[str]) -> Tuple[bool, str]:
     return True, proc.stdout
 
 
-def _digits(s: Optional[str]) -> str:
-    return re.sub(r"\D+", "", s or "")
-
-
 def _last10(s: Optional[str]) -> Optional[str]:
-    digits = _digits(s)
+    digits = normalize_phone_digits(s)
     if len(digits) < 10:
         return None
     return digits[-10:]
@@ -130,16 +132,24 @@ def _create_task(account_id: str, date_str: str, summary: str,
                  account_name: str = "") -> Optional[str]:
     disposition = _parse_disposition(summary)
     label = f" - {account_name}" if account_name else ""
-    subject = f"Outbound Call - {disposition}{label} - {date_str}"
-    values = (
-        f"Subject='{subject}' "
-        "Status='Completed' "
-        f"ActivityDate='{date_str}' "
-        f"WhatId='{account_id}' "
-        "Type='Call' "
-        f"CallType='Outbound' "
-        f"CallDisposition='{disposition}' "
-        f"Description='{summary.replace(chr(39), chr(92)+chr(39))}'"
+    subject = f"Paul (AI) - {disposition}{label} - {date_str}"
+    task_fields = {
+        "Subject": subject,
+        "Status": "Completed",
+        "ActivityDate": date_str,
+        "WhatId": account_id,
+        "Type": "Call",
+        "CallType": "Outbound",
+        "CallDisposition": disposition,
+        "Description": summary,
+    }
+    missing = validate_required_fields(task_fields, ["Subject", "Status", "ActivityDate", "WhatId"])
+    if missing:
+        print(f"Task create skipped for account {account_id}: missing {', '.join(missing)}")
+        return None
+    values = " ".join(
+        f"{key}='{str(value).replace(chr(39), chr(92)+chr(39))}'"
+        for key, value in task_fields.items()
     )
     cmd = [
         "sf",
@@ -200,18 +210,15 @@ def main() -> int:
             # Default behavior: process missing sf_task_id
             pass
 
-        # Use sf_account_id directly if present (fast path — no phone lookup needed)
-        if item.get("sf_account_id"):
-            account = {"Id": item["sf_account_id"], "Name": item.get("sf_account_name", "")}
-        else:
-            phone_last10 = _last10(item.get("to") or item.get("from"))
-            if not phone_last10:
-                skipped += 1
-                continue
-            account = _query_account_by_phone(phone_last10)
-            if not account or not account.get("Id"):
-                skipped += 1
-                continue
+        phone_last10 = _last10(item.get("to") or item.get("from"))
+        if not phone_last10:
+            skipped += 1
+            continue
+
+        account = _query_account_by_phone(phone_last10)
+        if not account or not account.get("Id"):
+            skipped += 1
+            continue
 
         processed += 1
         date_str = _extract_date(item.get("timestamp"))

@@ -16,6 +16,8 @@ Usage:
 
 import json
 import os
+import subprocess
+import threading
 from datetime import datetime, timezone
 from flask import Flask, request, jsonify
 
@@ -73,6 +75,22 @@ def post_call_summary():
         f.write(json.dumps(log_entry) + "\n")
 
     print(f"[{log_entry['timestamp']}] Call {call_id} logged — {str(summary)[:100]}")
+
+    # Auto-push to Salesforce in background (non-blocking)
+    def push_to_sf(call_id):
+        try:
+            script = os.path.join(os.path.dirname(__file__), "sfdc_push.py")
+            result = subprocess.run(
+                ["python3", script, "--call-id", call_id],
+                capture_output=True, text=True, timeout=60,
+                env={**os.environ, "SF_DISABLE_AUTOUPDATE": "true"}
+            )
+            print(f"[SF push] call_id={call_id} → {result.stdout.strip() or result.stderr.strip()}")
+        except Exception as e:
+            print(f"[SF push] Error for call_id={call_id}: {e}")
+
+    threading.Thread(target=push_to_sf, args=(call_id,), daemon=True).start()
+
     return jsonify({"status": "logged", "call_id": call_id}), 200
 
 
