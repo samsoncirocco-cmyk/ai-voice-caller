@@ -17,3 +17,4 @@ campaigns/test-*.csv
 logs/sfdc-push-state.json
 logs/auto_recovery.log
 scripts/
+logs/auto_recovery.log
