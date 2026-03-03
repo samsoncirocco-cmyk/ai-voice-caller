@@ -44,7 +44,7 @@ tmux new-session -d -s "$SESSION" -n "paul" \
 tmux new-window -t "$SESSION" -n "alex" \
   "cd '$SCRIPT_DIR' && python3 campaign_runner_v2.py campaigns/sled-territory-832.csv \
     --from +14806024668 \
-    --voice openai.nova \
+    --voice gcloud.en-US-Neural2-F \
     --prompt prompts/cold_outreach.txt \
     --business-hours \
     --interval $INTERVAL \
