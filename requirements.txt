@@ -17,3 +17,6 @@ flask>=3.0
 
 # Optional: Salesforce sync
 # simple-salesforce>=1.12
+
+# Research cache L2 (BigQuery — sled_intelligence.research_cache)
+google-cloud-bigquery>=3.0

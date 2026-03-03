@@ -184,9 +184,12 @@ def parse_research_json(content):
         return None
 
 
-DRIVE_CACHE_PATH = "gdrive:paul-workspace/research-cache"
-L1_TTL_DAYS = 7
-L2_TTL_DAYS = 30
+BQ_PROJECT   = "tatt-pro"
+BQ_DATASET   = "sled_intelligence"
+BQ_TABLE     = "research_cache"
+BQ_TABLE_REF = f"{BQ_PROJECT}.{BQ_DATASET}.{BQ_TABLE}"
+L1_TTL_DAYS  = 7
+L2_TTL_DAYS  = 30
 
 
 def _stable_cache_key(account_name: str, state: str, sf_account_id: str = "") -> str:
@@ -216,46 +219,120 @@ def _check_json_ttl(data: dict, max_days: int) -> bool:
         return False
 
 
-def _drive_pull(cache_key: str) -> dict | None:
+def _bq_client():
+    """Return a BigQuery client for tatt-pro using ADC. Cached at module level."""
+    if not hasattr(_bq_client, "_instance"):
+        from google.cloud import bigquery as _bq
+        _bq_client._instance = _bq.Client(project=BQ_PROJECT)
+    return _bq_client._instance
+
+
+def _bq_ensure_table() -> bool:
     """
-    Best-effort: pull research JSON from Google Drive L2.
-    Returns parsed dict on hit, None on any failure.
+    Create research_cache table in sled_intelligence if it doesn't exist.
+    Returns True on success, False on any failure (best-effort).
+    Schema uses BigQuery JSON type for full_json payload.
+    """
+    try:
+        from google.cloud import bigquery as _bq
+        from google.cloud.exceptions import NotFound
+        client = _bq_client()
+        table_ref = client.dataset(BQ_DATASET).table(BQ_TABLE)
+        try:
+            client.get_table(table_ref)
+            return True  # already exists
+        except NotFound:
+            pass
+        schema = [
+            _bq.SchemaField("account_id",    "STRING",    mode="REQUIRED",
+                            description="Cache key: sf_account_id or state__normalized_name"),
+            _bq.SchemaField("account_name",  "STRING",    description="Human-readable account name"),
+            _bq.SchemaField("sf_account_id", "STRING",    description="Salesforce Account ID if known"),
+            _bq.SchemaField("state",         "STRING"),
+            _bq.SchemaField("account_type",  "STRING"),
+            _bq.SchemaField("researched_at", "TIMESTAMP", mode="REQUIRED",
+                            description="Canonical TTL anchor — always read from this field"),
+            _bq.SchemaField("source",        "STRING",    description="openrouter/sonar | openai/gpt-4o-mini | generic"),
+            _bq.SchemaField("summary",       "STRING"),
+            _bq.SchemaField("contacts_json", "STRING",    description="JSON array of discovered contacts"),
+            _bq.SchemaField("full_json",     "JSON",      description="Full research payload"),
+        ]
+        table = _bq.Table(table_ref, schema=schema)
+        table.description = "AI pre-call research cache — shared L2 across all machines"
+        client.create_table(table)
+        print(f"  [research] Created BQ table {BQ_TABLE_REF}")
+        return True
+    except Exception as e:
+        print(f"  [research] BQ table ensure failed (non-fatal): {e}")
+        return False
+
+
+def _bq_pull(cache_key: str) -> dict | None:
+    """
+    Best-effort: query BigQuery for existing research within L2_TTL_DAYS.
+    TTL evaluated from researched_at column — never BQ ingestion time.
+    Returns parsed dict on hit, None on miss/stale/any failure.
     Never raises — cache infra must never block calling.
     """
-    import subprocess, tempfile
     try:
-        with tempfile.TemporaryDirectory() as tmp:
-            result = subprocess.run(
-                ["rclone", "copy", f"{DRIVE_CACHE_PATH}/{cache_key}.json", tmp, "--quiet"],
-                timeout=15, capture_output=True
-            )
-            if result.returncode != 0:
-                return None
-            dest = Path(tmp) / f"{cache_key}.json"
-            if not dest.exists():
-                return None
-            data = json.loads(dest.read_text())
-            if _check_json_ttl(data, L2_TTL_DAYS):
-                return data
-            return None  # stale in Drive too
+        client = _bq_client()
+        query = f"""
+            SELECT full_json, researched_at
+            FROM `{BQ_TABLE_REF}`
+            WHERE account_id = @account_id
+              AND researched_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {L2_TTL_DAYS} DAY)
+            ORDER BY researched_at DESC
+            LIMIT 1
+        """
+        from google.cloud import bigquery as _bq
+        job_config = _bq.QueryJobConfig(
+            query_parameters=[
+                _bq.ScalarQueryParameter("account_id", "STRING", cache_key)
+            ]
+        )
+        rows = list(client.query(query, job_config=job_config).result())
+        if not rows:
+            return None
+        raw = rows[0]["full_json"]
+        # BQ JSON type comes back as string; parse it
+        data = json.loads(raw) if isinstance(raw, str) else raw
+        # Belt-and-suspenders: validate TTL from the JSON's own _cached_at field
+        if not _check_json_ttl(data, L2_TTL_DAYS):
+            return None
+        return data
     except Exception as e:
-        print(f"  [research] Drive L2 pull failed (non-fatal): {e}")
+        print(f"  [research] BQ L2 pull failed (non-fatal): {e}")
         return None
 
 
-def _drive_push(cache_key: str, local_path: Path) -> None:
+def _bq_push(result: dict) -> None:
     """
-    Best-effort: push research JSON to Google Drive L2.
+    Best-effort: stream-insert research result into BigQuery L2.
     Never raises — cache infra must never block calling.
+    Structured fields stored in dedicated columns; full payload in full_json.
     """
-    import subprocess
     try:
-        subprocess.run(
-            ["rclone", "copy", str(local_path), DRIVE_CACHE_PATH, "--quiet"],
-            timeout=20, capture_output=True
-        )
+        _bq_ensure_table()
+        client = _bq_client()
+        contacts = result.get("contacts", [])
+        row = {
+            "account_id":    result.get("_cache_key", ""),
+            "account_name":  result.get("account_name", ""),
+            "sf_account_id": result.get("sf_account_id", ""),
+            "state":         result.get("state", ""),
+            "account_type":  result.get("account_type", ""),
+            # Use _cached_at from JSON as canonical researched_at (constraint #2)
+            "researched_at": result.get("_cached_at", datetime.now(timezone.utc).isoformat()),
+            "source":        result.get("_source", "unknown"),
+            "summary":       result.get("summary", ""),
+            "contacts_json": json.dumps(contacts),
+            "full_json":     json.dumps(result),
+        }
+        errors = client.insert_rows_json(BQ_TABLE_REF, [row])
+        if errors:
+            print(f"  [research] BQ push insert errors (non-fatal): {errors}")
     except Exception as e:
-        print(f"  [research] Drive L2 push failed (non-fatal): {e}")
+        print(f"  [research] BQ L2 push failed (non-fatal): {e}")
 
 
 def research_account(account_name, state, account_type="Education", sf_account_id=""):
@@ -290,18 +367,18 @@ def research_account(account_name, state, account_type="Education", sf_account_i
         except Exception:
             pass
 
-    # --- L2: Google Drive cache ---
-    drive_data = _drive_pull(cache_key)
-    if drive_data:
-        print(f"  [research] L2 Drive hit: {account_name} (key={cache_key})")
-        drive_data.setdefault("account_name", account_name)
-        drive_data.setdefault("state", state)
-        # Repopulate L1 from Drive hit
+    # --- L2: BigQuery sled_intelligence.research_cache ---
+    bq_data = _bq_pull(cache_key)
+    if bq_data:
+        print(f"  [research] L2 BQ hit: {account_name} (key={cache_key})")
+        bq_data.setdefault("account_name", account_name)
+        bq_data.setdefault("state", state)
+        # Repopulate L1 from BQ hit so next call is local-fast
         try:
-            cache_file.write_text(json.dumps(drive_data, indent=2))
+            cache_file.write_text(json.dumps(bq_data, indent=2))
         except Exception:
             pass
-        return drive_data
+        return bq_data
 
     # --- MISS: call Sonar ---
     print(f"  [research] Cache miss — researching: {account_name} ({state}, {account_type})")
@@ -314,13 +391,13 @@ def research_account(account_name, state, account_type="Education", sf_account_i
         if sf_account_id:
             result["sf_account_id"] = sf_account_id
         result["_cached_at"] = datetime.now(timezone.utc).isoformat()
-        # Write L1
+        # Write L1 — always, fast
         try:
             cache_file.write_text(json.dumps(result, indent=2))
         except Exception:
             pass
-        # Write L2 (best-effort, never blocks)
-        _drive_push(cache_key, cache_file)
+        # Write L2 BigQuery — best-effort, never blocks calling
+        _bq_push(result)
         return result
 
     # Try OpenRouter (Perplexity Sonar) first — web-grounded
