@@ -15,31 +15,34 @@ Outbound AI voice call system for Fortinet SLED prospecting. Calls using SignalW
 | SignalWire account | ✅ Active | Project ID: `6b9a5a5f...` |
 | Phone number | ✅ Owned | +16028985026 (and +14806025848) |
 | Outbound calls connect | ✅ Working | Phone rings, call connects |
-| AI agent speaks | ❌ BROKEN | **Calls connect but agent is silent** |
-| SWML webhook | ⚠️ Unclear | Multiple approaches tested, none confirmed working |
-| SWAIG functions | ❌ Not built | Planned for CRM/contact logging |
+| AI agent speaks | ✅ FIXED | `make_call_v8.py` — inline SWML, confirmed working Mar 3 |
+| Post-call logging | ✅ FIXED | `webhook_server.py` on :18790, logs to `logs/call_summaries.jsonl` |
+| hooks.6eyes.dev tunnel | ✅ FIXED | Flask server replacing dead Dialogflow server, PM2-managed |
+| SWAIG functions | ❌ Not built | Next: log contacts to Salesforce/vault after call |
 
-**Bottom line:** Infrastructure works, calls get through. The AI agent silently connects but won't speak. This is the active blocker.
+**Bottom line:** Calls connect, Paul speaks, post-call summaries are captured. Next step is campaign runner + Salesforce writeback.
 
 ---
 
 ## 🔍 Where We Left Off
 
-Last active debugging: **Feb 17, 2026**
+Last active session: **March 3, 2026** — silence bug diagnosed and fixed.
 
-### What was tried:
-- `make_call_v7.py` — 3 diagnostic approaches (A/B/C):
-  - **Approach A** (cXML `<Say>` baseline) — tests if carrier/infra works at all
-  - **Approach B** (Calling API + SignalWire relay-bin SWML) — tests native AI agent via hosted SWML
-  - **Approach C** (Calling API + GCF webhook) — tests external SWML endpoint
-- Results were logged but root cause of silence was not confirmed
+### Root causes found (both fixed):
+1. **AI agent 404** — Referenced agent `f2c41814...` no longer existed on SignalWire. Every v2–v7 call was routing to a ghost.
+2. **Dead SWAIG webhook** — v3–v7 pointed `web_hook_url` at a GCF function (`swaigWebhook`) that was never deployed. SignalWire silently kills AI init when a SWAIG endpoint is unreachable.
+3. **Dead hooks server** — port 18790 was running an old Dialogflow `functions-framework` from an abandoned approach. Replaced with `webhook_server.py`.
 
-### Leading hypothesis:
-The SWML `ai_agent_id` reference is not triggering the agent correctly — either the relay-bin URL is stale/misconfigured, or the AI agent resource itself is not responding. The baseline test (Approach A) should confirm whether the issue is infrastructure or specifically the AI layer.
+### Fix applied:
+- `make_call_v8.py` — inline SWML with prompt directly in call body, no `ai_agent_id`, no SWAIG, `post_prompt_url` pointing to `https://hooks.6eyes.dev/voice-caller/post-call`
+- `webhook_server.py` — Flask server on :18790, catches post-call summaries, appends to `logs/call_summaries.jsonl`
+- Confirmed working: call connected, Paul spoke, Mar 3 2026
 
-### Last confirmed working:
-- `make_call_v2.py` — call connected, agent was created, but silence on v3+
-- SignalWire AI Agent ID: `f2c41814-4a36-436b-b723-71d5cdffec60`
+### Current working script:
+```bash
+python3 make_call_v8.py                    # Call Samson's cell (test)
+python3 make_call_v8.py +1XXXXXXXXXX       # Call any number
+```
 
 ---
 
@@ -122,13 +125,14 @@ tail -50 logs/auto_recovery.log
 
 ## 📋 Next Steps (priority order)
 
-- [ ] **Run Approach A** — confirm baseline works (carrier not blocking)
-- [ ] **Run Approach B** — confirm relay-bin SWML is valid
-- [ ] **If both work** → problem is inside the AI agent config, not infra
-- [ ] **If A works, B fails** → fix relay-bin SWML or replace with inline SWML
-- [ ] **If A fails** → new SignalWire number may be needed (spam flagged)
-- [ ] Once calls + AI work: build SWAIG function to log contacts to vault
-- [ ] Once logging works: build campaign runner for batch calling
+- [x] ~~Fix AI silence bug~~ — done Mar 3, `make_call_v8.py`
+- [x] ~~Fix hooks.6eyes.dev~~ — done Mar 3, `webhook_server.py`
+- [x] ~~Wire post_prompt_url~~ — done Mar 3, summaries log to `logs/call_summaries.jsonl`
+- [ ] **Make 5 test calls** — verify summaries are useful before building storage
+- [ ] **Export SD/NE district leads** — CSV from Salesforce or SLED toolkit
+- [ ] **Build campaign runner** — batch caller with configurable delay, reads from CSV
+- [ ] **Salesforce writeback** — push captured contacts into the right SF account record
+- [ ] **Refine Paul's prompt** — tune based on real call outcomes
 
 ---
 
