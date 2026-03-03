@@ -53,9 +53,9 @@ def build_swml():
                             "text": (
                                 "Summarize: who you spoke with, their role, "
                                 "interest level (1-5), and any follow-up agreed to."
-                            ),
-                            "post_prompt_url": "https://hooks.6eyes.dev/voice-caller/post-call"
+                            )
                         },
+                        "post_prompt_url": "https://hooks.6eyes.dev/voice-caller/post-call",
                         "params": {
                             "direction": "outbound"
                         }
