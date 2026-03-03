@@ -1,21 +1,31 @@
 #!/usr/bin/env python3
 """
-make_call_v8.py — Clean inline SWML, credentials from config, prompt from file.
+make_call_v8.py — Flexible inline SWML caller. Supports voice/prompt/from CLI args.
 
 Usage:
-  python3 make_call_v8.py                  # Call Samson's cell (default)
-  python3 make_call_v8.py +16025551234     # Call any number
+  python3 make_call_v8.py                                           # Defaults
+  python3 make_call_v8.py +16025551234                              # Custom number
+  python3 make_call_v8.py +16025551234 --voice openai.onyx          # Custom voice
+  python3 make_call_v8.py +16025551234 --prompt prompts/cold_outreach.txt
+  python3 make_call_v8.py +16025551234 --from +14806024668          # Second number
 
-To edit Paul's script: open prompts/paul.txt — no code changes needed.
+Voices (best → most robotic):
+  elevenlabs.thomas     — most human, needs ElevenLabs linked
+  openai.onyx           — deep male, very natural (recommended)
+  openai.echo           — lighter male, natural
+  gcloud.en-US-Casual-K — Google casual male
+  rime.marsh:arcana     — newer engine, natural
+  amazon.Matthew-Neural — better Polly (current default, avoid)
 """
 
 import sys
 import json
 import base64
 import os
+import argparse
 import requests
 
-# === Credentials (from config/signalwire.json — gitignored, never hardcode) ===
+# === Credentials ===
 _cfg_path = os.path.join(os.path.dirname(__file__), "config", "signalwire.json")
 with open(_cfg_path) as _f:
     _cfg = json.load(_f)
@@ -24,12 +34,10 @@ SPACE_URL  = _cfg["space_url"]
 PROJECT_ID = _cfg["project_id"]
 AUTH_TOKEN = _cfg["auth_token"]
 
-FROM_NUMBER = "+16028985026"
-DEFAULT_TO  = "+16022950104"  # Samson's cell
-
-# === Prompt (edit prompts/paul.txt to change Paul's script — no code needed) ===
-_prompt_path = os.path.join(os.path.dirname(__file__), "prompts", "paul.txt")
-PAUL_PROMPT = open(_prompt_path).read().strip()
+DEFAULT_FROM   = "+16028985026"
+DEFAULT_TO     = "+16022950104"
+DEFAULT_VOICE  = "openai.onyx"
+DEFAULT_PROMPT = "prompts/paul.txt"
 
 POST_PROMPT = (
     "Summarize the call in this exact format:\n"
@@ -44,15 +52,27 @@ POST_PROMPT = (
 )
 
 
-def build_swml():
+def load_prompt(path):
+    full_path = os.path.join(os.path.dirname(__file__), path)
+    return open(full_path).read().strip()
+
+
+def build_swml(prompt_text, voice):
     return {
         "version": "1.0.0",
         "sections": {
             "main": [
                 {
                     "ai": {
+                        "languages": [
+                            {
+                                "name": "English",
+                                "code": "en-US",
+                                "voice": voice
+                            }
+                        ],
                         "prompt": {
-                            "text": PAUL_PROMPT,
+                            "text": prompt_text,
                             "temperature": 0.8
                         },
                         "post_prompt": {
@@ -69,14 +89,15 @@ def build_swml():
     }
 
 
-def make_call(to_number):
+def make_call(to_number, from_number, voice, prompt_path):
+    prompt_text = load_prompt(prompt_path)
     auth_b64 = base64.b64encode(f"{PROJECT_ID}:{AUTH_TOKEN}".encode()).decode()
-    swml = build_swml()
+    swml = build_swml(prompt_text, voice)
 
     payload = {
         "command": "dial",
         "params": {
-            "from": FROM_NUMBER,
+            "from": from_number,
             "to": to_number,
             "swml": swml
         }
@@ -90,7 +111,10 @@ def make_call(to_number):
 
     url = f"https://{SPACE_URL}/api/calling/calls"
 
-    print(f"\nCalling {to_number} from {FROM_NUMBER}...")
+    print(f"\n📞 {from_number} → {to_number}")
+    print(f"🎙  Voice:  {voice}")
+    print(f"📄 Prompt: {prompt_path}\n")
+
     response = requests.post(url, json=payload, headers=headers)
 
     print(f"Status: {response.status_code}")
@@ -100,11 +124,17 @@ def make_call(to_number):
         print(response.text)
 
     if response.status_code == 200:
-        print("\n✅ Call initiated. Prompt loaded from prompts/paul.txt")
+        print("\n✅ Call initiated.")
     else:
-        print(f"\n❌ Call failed ({response.status_code}). Check credentials.")
+        print(f"\n❌ Call failed ({response.status_code}).")
 
 
 if __name__ == "__main__":
-    to = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_TO
-    make_call(to)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("to", nargs="?", default=DEFAULT_TO)
+    parser.add_argument("--voice",  default=DEFAULT_VOICE)
+    parser.add_argument("--prompt", default=DEFAULT_PROMPT)
+    parser.add_argument("--from",   dest="from_number", default=DEFAULT_FROM)
+    args = parser.parse_args()
+
+    make_call(args.to, args.from_number, args.voice, args.prompt)
