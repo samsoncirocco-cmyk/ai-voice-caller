@@ -414,9 +414,10 @@ def research_account(account_name, state, account_type="Education", sf_account_i
         print(f"  [research] Got context via OpenAI: {result.get('summary', '')[:80]}...")
         return _cache_and_return(result)
 
-    # Last resort: generic context
+    # Last resort: generic context — still goes through _cache_and_return so
+    # L1/L2 are populated and metadata fields are consistent with the normal path.
     print(f"  [research] All providers failed, using generic context")
-    return {
+    result = {
         "summary": f"{account_name} is a {account_type.lower()} organization in {state}.",
         "contacts": [],
         "hook_1": f"I'm reaching out to {account_type.lower()} organizations in {state} about network security — do you have a moment?",
@@ -431,6 +432,7 @@ def research_account(account_name, state, account_type="Education", sf_account_i
         ],
         "_source": "generic_fallback"
     }
+    return _cache_and_return(result)
 
 
 # ─── Contact Helpers ─────────────────────────────────────────────
@@ -524,7 +526,7 @@ def build_dynamic_swml(context, base_prompt_path="prompts/paul.txt",
     )
 
     # Build a personalized static greeting using the account context
-    account_name = context.get("_account_name", "")
+    account_name = context.get("account_name", "")
     hook = context.get("hook_1", "")
     if account_name and hook:
         # Use research-generated hook as the static greeting (max 200 chars)

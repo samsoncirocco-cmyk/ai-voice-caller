@@ -121,7 +121,9 @@ def load_leads(csv_path):
                 "account": row.get("account", "").strip(),
                 "notes": notes,
                 "state": state,
-                "account_type": acct_type
+                "account_type": acct_type,
+                # Pass SFDC Account ID so research_agent uses the stable cache key
+                "sf_account_id": row.get("sf_account_id", "").strip(),
             })
     return leads
 
@@ -297,14 +299,13 @@ def run_campaign(csv_path, args):
         print(f"  Phone: {lead['phone']}")
         print(f"  State: {lead['state']} | Type: {lead['account_type']}")
 
-        # Step 1: Research
-        context = get_cached_research(lead["account"])
-        if not context:
-            context = research_account(
-                lead["account"], lead["state"], lead["account_type"],
-                sf_account_id=lead.get("sf_account_id", ""),
-            )
-            cache_research(lead["account"], context)
+        # Step 1: Research — L1 (local) + L2 (BigQuery) caching handled inside research_account().
+        # Legacy get_cached_research()/cache_research() removed: they keyed by account_name only,
+        # which bypassed the stable sf_account_id key and shadowed BigQuery hits.
+        context = research_account(
+            lead["account"], lead["state"], lead["account_type"],
+            sf_account_id=lead.get("sf_account_id", ""),
+        )
 
         context_source = context.get("_source", "unknown")
         print(f"  Hook: {context.get('hook_1', 'N/A')[:80]}")
