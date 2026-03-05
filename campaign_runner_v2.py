@@ -218,23 +218,29 @@ def make_call(to_number, swml, from_number=None):
 # ─── Business Hours Check ───────────────────────────────────────
 
 def is_business_hours():
-    """Check if current time is within calling hours (8am-4pm Central)."""
-    from datetime import timedelta
-    # Central time = UTC-6 (or UTC-5 during DST, approximate)
-    utc_now = datetime.now(timezone.utc)
-    central_hour = (utc_now.hour - 6) % 24  # rough approximation
-    return 8 <= central_hour < 16
+    """Check if current time is within calling hours (8am-4pm Central, M-F)."""
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo
+    local_now = datetime.now(ZoneInfo("America/Chicago"))
+    if local_now.weekday() >= 5:  # Saturday=5, Sunday=6
+        return False
+    return 8 <= local_now.hour < 16
 
 
 def seconds_until_business_hours():
     """Seconds until next 8am Central."""
-    from datetime import timedelta
-    utc_now = datetime.now(timezone.utc)
-    central_hour = (utc_now.hour - 6) % 24
-    if central_hour >= 16:
-        hours_until = (24 - central_hour) + 8
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo
+    local_now = datetime.now(ZoneInfo("America/Chicago"))
+    local_hour = local_now.hour
+    if local_hour >= 16:
+        hours_until = (24 - local_hour) + 8
     else:
-        hours_until = 8 - central_hour
+        hours_until = max(0, 8 - local_hour)
     return hours_until * 3600
 
 

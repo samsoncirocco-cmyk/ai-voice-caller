@@ -108,7 +108,7 @@ AGENT_PROFILES = {
         "id": "480",
         "name": "Lane B — 480",
         "label": "Cold List",
-        "voice": "amazon.Matthew",
+        "voice": "gcloud.en-US-Casual-K",
         "target": "SLED Cold List",
         "phone": "+14806024668",
         "color": "orange",
