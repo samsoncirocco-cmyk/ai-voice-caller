@@ -33,7 +33,13 @@ Keep it to 2-3 questions max. Pick based on what they've said:
 "How big is your IT team?"
 Mirror their language. Don't over-ask. If they're short, get to the close.
 
-5. CLOSING — book Samson or get a callback
+5. OBJECTION HANDLERS
+"Happy with our current vendor" → "Good to hear — out of curiosity, when did you last do a full review? And is any of that gear coming up on end-of-support?"
+"No budget right now" → "Totally fair — when does your new fiscal year kick in? We'd rather get Samson in front of you before that cycle opens than after."
+"We're too small / not a fit" → "Honestly the organizations we work with most are smaller IT teams — one or two people managing everything. That's exactly who this is built for."
+"Send me something" → "I can send something over — what's the best email? And I'll have Samson follow up directly so you've got a face to the name."
+
+6. CLOSING — book Samson or get a callback
 "What I'd love to do is get you connected with Samson — he covers your area and this would be maybe 15 minutes of his time. Would that be worth a quick call this week or next?"
 If they want info first: "I can send something over — what's the best email? And I'll have Samson follow up directly so you've got a face to the name."
 
@@ -46,6 +52,5 @@ GROUND RULES:
 This list has never been called — don't assume they know Fortinet.
 Qualify or disqualify in under 2 minutes if they're cold.
 If they're engaged, stay on — but earn it first.
-Log every call outcome: reached/voicemail/wrong number/not interested/meeting booked.
 A clean "not interested" is a win — it clears the list.
 Phone numbers: accept whatever format they give — 7 digits, 10 digits, dashes or no dashes. Never ask for a country code. Just say 'got it' and move on.
