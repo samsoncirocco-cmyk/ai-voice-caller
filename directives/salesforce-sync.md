@@ -1,6 +1,49 @@
 # Directive: Salesforce Sync
 
-## Purpose
+## Two-Way SFDC Integration
+
+### PULL (SFDC → accounts.db) — `sfdc_pull.py --sync`
+Salesforce is the source of truth for account data.  The nightly sync replaces the static CSV.
+
+#### Eligibility criteria (OR — any match gets pulled):
+- Account has **no open Opportunity** (`IsClosed = false`) in IA/NE/SD territory
+- Account's **LastActivityDate is null** (never touched)
+- Account's **LastActivityDate <= 30 days ago** (gone cold)
+
+#### Upsert rules:
+| Condition | Action |
+|-----------|--------|
+| New SFDC account (no match in DB) | INSERT with `call_status='new'`, `call_count=0` |
+| Existing account (matched by `sfdc_id` or `phone+name`) | UPDATE `name/phone/state/sfdc_id` only — **preserve** `call_status` and `call_count` |
+
+#### Referral contact pull:
+- SFDC Contacts with `LeadSource IN ('Referral', 'AI Caller Referral', 'Word of mouth')`
+- New since last sync (tracked in `logs/sfdc-sync-state.json`)
+- Upserted as new accounts with `referral_source='sfdc_referral_contact'`
+
+#### SOQL workaround:
+SOQL semi-join subqueries (`Id NOT IN (SELECT ...)`) cannot be nested inside `OR` — they must be at the top-level WHERE. We therefore run **two separate queries** and merge client-side:
+- Query A: accounts with no open opp (semi-join at top level)
+- Query B: accounts with `LastActivityDate = null OR <= cutoff` (simple filter)
+Results are unioned by `Id`.
+
+#### Cron (midnight MST every night):
+```
+0 7 * * * cd /home/samson/.openclaw/workspace/projects/ai-voice-caller && /usr/bin/python3 sfdc_pull.py --sync >> logs/sfdc-sync.log 2>&1
+```
+Log: `logs/sfdc-sync.log`
+Sync state: `logs/sfdc-sync-state.json` (tracks `last_sync` and `last_contact_created_date`)
+
+#### CLI:
+```bash
+python3 sfdc_pull.py --sync             # live sync
+python3 sfdc_pull.py --sync --dry-run  # preview, no DB writes
+python3 sfdc_pull.py                   # legacy CSV mode (unchanged)
+```
+
+---
+
+### PUSH (accounts.db → SFDC) — `execution/sync_salesforce.py`
 Push AI voice caller data from `logs/call_summaries.jsonl` to Salesforce CRM.
 Source of truth is the flat JSONL log (NOT Firestore — Firestore is legacy/unused).
 
