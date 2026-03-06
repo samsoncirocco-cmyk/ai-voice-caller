@@ -4,10 +4,19 @@ orchestrator.py — Multi-agent call orchestrator for AI Voice Caller V2.
 
 Behavior:
   - Spins up N agents (max 4)
-  - Each agent checks out an account atomically
+  - Each agent gets next account via SmartRouter (vertical + time-of-day + performance)
   - Places call via make_call_v8.make_call()
   - Waits for webhook log entry and completes the account
   - Enforces 1 call/agent/5min and business hours (8am-6pm MST, M-F)
+
+Smart routing (execution/smart_router.py):
+  - K-12 + government → paul.txt prompt
+  - Higher ed + other  → cold_outreach.txt prompt
+  - K-12 callable only 8-10am or 1-3pm
+  - Government callable only 9-11am
+  - No calls 12-1pm (lunch block)
+  - State load-balancing: max 3 in-flight per state (IA/NE/SD)
+  - Performance-based: best answer_rate variant wins after 10+ calls
 
 Dry run:
   python3 execution/orchestrator.py --dry-run
@@ -36,6 +45,8 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT))
 
 from account_db import AccountDB  # noqa: E402
+from smart_router import SmartRouter  # noqa: E402
+from performance_tracker import record_call_outcome  # noqa: E402
 import make_call_v8  # noqa: E402
 
 LOG_DIR = ROOT / "logs"
@@ -283,8 +294,21 @@ def _wait_for_webhook(target_phone: str, since_ts: datetime, timeout: int) -> di
     return None
 
 
-def _agent_loop(agent_id: str, args, stop_event: threading.Event) -> None:
-    db = AccountDB(db_path=args.db)
+def _agent_loop(
+    agent_id: str,
+    args,
+    stop_event: threading.Event,
+    router: "SmartRouter",
+) -> None:
+    """
+    Agent loop — now uses SmartRouter for intelligent account + prompt + voice selection.
+
+    SmartRouter replaces the direct db.checkout() call and adds:
+      - Vertical-aware prompt selection
+      - Time-of-day call windows per vertical
+      - State-based load balancing
+      - Performance-based prompt variant selection
+    """
     last_call_ts = 0.0
 
     while not stop_event.is_set():
@@ -301,31 +325,68 @@ def _agent_loop(agent_id: str, args, stop_event: threading.Event) -> None:
                 stop_event.wait(timeout=max(5, sleep_for))
                 continue
 
-            account = db.checkout(agent_id)
-            if not account:
+            # ── SmartRouter: replaces db.checkout(agent_id) ──────────────────
+            routing = router.get_next_call(agent_id)
+            if not routing:
+                logging.debug("[%s] No callable accounts (router returned None)", agent_id)
                 stop_event.wait(timeout=args.poll_interval)
                 continue
 
-            account_id = account["account_id"]
+            account     = routing["account"]
+            prompt_path = args.prompt or routing["prompt_file"]   # CLI override wins
+            voice       = args.voice or routing["voice"]          # CLI override wins
+
+            # ── Referral prompt injection ─────────────────────────────────────
+            # If account was added by referral_processor, outcome_notes holds
+            # a JSON blob with "referral_prompt_file". Use it instead of the
+            # default prompt so the AI opens with "I was referred to you by X".
+            if not args.prompt:  # Only override if no CLI prompt given
+                try:
+                    ref_notes = json.loads(account.get("outcome_notes") or "{}")
+                    ref_prompt = ref_notes.get("referral_prompt_file")
+                    if ref_prompt:
+                        candidate = ROOT / ref_prompt
+                        if candidate.exists():
+                            prompt_path = str(candidate.relative_to(ROOT))
+                            logging.info(
+                                "[%s] Referral prompt override: %s",
+                                agent_id, prompt_path,
+                            )
+                except Exception:
+                    pass  # Malformed notes — keep default prompt
+            # ─────────────────────────────────────────────────────────────────
+
+            account_id   = account["account_id"]
             account_name = account.get("account_name", "unknown")
-            to_number = _to_e164(account.get("phone", ""))
+            to_number    = _to_e164(account.get("phone", ""))
             account_state = account.get("state")
-            from_number = args.from_number or _select_from_number(account_state)
-            prompt_path = _select_prompt(account, args.prompt)
+            from_number  = args.from_number or _select_from_number(account_state)
+
+            logging.info(
+                "[%s] Routing: %s | vertical=%s | prompt=%s | voice=%s | %s",
+                agent_id,
+                account_name,
+                routing["vertical"],
+                prompt_path,
+                voice,
+                routing["reason"],
+            )
 
             if args.dry_run:
                 logging.info(
-                    "[%s] DRY RUN — would call %s (%s) state=%s -> %s from=%s prompt=%s",
+                    "[%s] DRY RUN — would call %s (%s) state=%s -> %s from=%s",
                     agent_id,
                     account_name,
                     account.get("phone"),
                     account_state,
                     to_number,
                     from_number,
-                    prompt_path,
                 )
-                # In dry-run, release immediately by marking no_answer
-                db.complete(account_id, "no_answer", "dry-run release")
+                # Release without corrupting perf stats in dry-run
+                router.db.complete(account_id, "no_answer", "dry-run release")
+                with router._lock:
+                    for ids in router._in_flight.values():
+                        ids.discard(account_id)
                 last_call_ts = time.time()
                 continue
 
@@ -344,12 +405,19 @@ def _agent_loop(agent_id: str, args, stop_event: threading.Event) -> None:
                 make_call_v8.make_call(
                     to_number,
                     from_number,
-                    args.voice or make_call_v8.DEFAULT_VOICE,
+                    voice,
                     prompt_path,
                 )
             except Exception as exc:
                 logging.exception("[%s] make_call failed: %s", agent_id, exc)
-                db.complete(account_id, "no_answer", f"call error: {exc}")
+                router.complete_call(account_id, "no_answer", f"call error: {exc}", answered=False)
+                record_call_outcome(
+                    outcome="no_answer",
+                    prompt_file=prompt_path,
+                    vertical=routing.get("vertical", "other"),
+                    voice=voice,
+                    state=account_state or "XX",
+                )
                 last_call_ts = time.time()
                 continue
 
@@ -358,7 +426,23 @@ def _agent_loop(agent_id: str, args, stop_event: threading.Event) -> None:
             if entry:
                 summary = entry.get("summary", "")
                 outcome = _parse_outcome(summary)
-                db.complete(account_id, outcome, summary)
+                answered = outcome not in ("no_answer",)
+
+                # Complete via router so performance stats get updated
+                router.complete_call(
+                    account_id,
+                    outcome,
+                    # Embed prompt path in notes so perf tracker can attribute it
+                    notes=f"{summary}\n[prompt:{prompt_path}]",
+                    answered=answered,
+                )
+                record_call_outcome(
+                    outcome=outcome,
+                    prompt_file=prompt_path,
+                    vertical=routing.get("vertical", "other"),
+                    voice=voice,
+                    state=account_state or "XX",
+                )
                 logging.info("[%s] Completed %s with outcome=%s", agent_id, account_name, outcome)
 
                 if outcome == "interested":
@@ -370,7 +454,14 @@ def _agent_loop(agent_id: str, args, stop_event: threading.Event) -> None:
                     ]
                     _post_slack(f"Interested lead: {account_name}", blocks=blocks)
             else:
-                db.complete(account_id, "no_answer", "webhook timeout")
+                router.complete_call(account_id, "no_answer", "webhook timeout", answered=False)
+                record_call_outcome(
+                    outcome="no_answer",
+                    prompt_file=prompt_path,
+                    vertical=routing.get("vertical", "other"),
+                    voice=voice,
+                    state=account_state or "XX",
+                )
                 logging.warning("[%s] Webhook timeout for %s", agent_id, account_name)
 
             last_call_ts = time.time()
@@ -391,16 +482,32 @@ def main() -> int:
     parser.add_argument("--db", default=None, help="Override DB path")
     parser.add_argument("--dry-run", action="store_true", help="Print actions without calling")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
+    parser.add_argument("--bypass-time-windows", action="store_true",
+                        help="Ignore vertical-specific time windows (useful for testing)")
     args = parser.parse_args()
 
     _setup_logging(args.verbose)
 
+    # ── Instantiate SmartRouter (shared across all agent threads) ─────────────
+    router = SmartRouter(
+        db_path=args.db,
+        bypass_time_windows=getattr(args, "bypass_time_windows", False),
+    )
+    logging.info("SmartRouter initialized — stats file: %s", router.stats_file)
+
     if args.dry_run:
-        db = AccountDB(db_path=args.db)
-        due = db.get_due(limit=max(1, min(args.agents, 4)))
+        due = router.db.get_due(limit=max(1, min(args.agents, 4)))
         logging.info("DRY RUN — %d accounts due", len(due))
         for a in due:
-            logging.info("Would call: %s (%s)", a.get("account_name"), a.get("phone"))
+            vertical = router._classify_vertical(a)
+            prompt, voice = router._select_prompt_and_voice(vertical, router._load_stats())
+            callable_now = router.is_callable_now(vertical)
+            logging.info(
+                "Would call: %-35s  state=%-2s  vertical=%-10s  prompt=%-30s  voice=%-16s  %s",
+                a.get("account_name", "?"), a.get("state", "?"),
+                vertical, prompt, voice,
+                "✅ callable now" if callable_now else "⛔ outside time window",
+            )
         return 0
 
     agent_count = max(1, min(args.agents, 4))
@@ -413,7 +520,9 @@ def main() -> int:
         for i in range(agent_count):
             agent_id = f"agent-{i+1}"
             t = threading.Thread(
-                target=_agent_loop, args=(agent_id, args, stop_event), daemon=True
+                target=_agent_loop,
+                args=(agent_id, args, stop_event, router),
+                daemon=True,
             )
             t.start()
             threads.append(t)

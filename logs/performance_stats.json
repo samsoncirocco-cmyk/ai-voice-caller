@@ -1,0 +1,209 @@
+{
+  "prompt_variant": {
+    "prompts/cold_outreach.txt": {
+      "other": {
+        "answered": 0,
+        "voicemail": 0,
+        "no_answer": 1,
+        "interested": 4,
+        "not_interested": 0,
+        "referral_given": 0
+      },
+      "government": {
+        "answered": 1,
+        "voicemail": 0,
+        "no_answer": 0,
+        "interested": 1,
+        "not_interested": 0,
+        "referral_given": 0
+      },
+      "higher_ed": {
+        "answered": 0,
+        "voicemail": 0,
+        "no_answer": 0,
+        "interested": 1,
+        "not_interested": 0,
+        "referral_given": 0
+      }
+    },
+    "prompts/paul.txt": {
+      "k12": {
+        "answered": 2,
+        "voicemail": 0,
+        "no_answer": 0,
+        "interested": 2,
+        "not_interested": 0,
+        "referral_given": 0
+      },
+      "government": {
+        "answered": 3,
+        "voicemail": 0,
+        "no_answer": 0,
+        "interested": 9,
+        "not_interested": 0,
+        "referral_given": 0
+      },
+      "other": {
+        "answered": 3,
+        "voicemail": 0,
+        "no_answer": 0,
+        "interested": 0,
+        "not_interested": 0,
+        "referral_given": 0
+      }
+    },
+    "prompts/k12.txt": {
+      "k12": {
+        "answered": 0,
+        "voicemail": 0,
+        "no_answer": 0,
+        "interested": 1,
+        "not_interested": 0,
+        "referral_given": 0
+      }
+    }
+  },
+  "voice": {
+    "openai.shimmer": {
+      "other": {
+        "answered": 0,
+        "voicemail": 0,
+        "no_answer": 1,
+        "interested": 4,
+        "not_interested": 0,
+        "referral_given": 0
+      },
+      "government": {
+        "answered": 1,
+        "voicemail": 0,
+        "no_answer": 0,
+        "interested": 1,
+        "not_interested": 0,
+        "referral_given": 0
+      },
+      "higher_ed": {
+        "answered": 0,
+        "voicemail": 0,
+        "no_answer": 0,
+        "interested": 1,
+        "not_interested": 0,
+        "referral_given": 0
+      }
+    },
+    "openai.onyx": {
+      "k12": {
+        "answered": 2,
+        "voicemail": 0,
+        "no_answer": 0,
+        "interested": 3,
+        "not_interested": 0,
+        "referral_given": 0
+      },
+      "government": {
+        "answered": 3,
+        "voicemail": 0,
+        "no_answer": 0,
+        "interested": 9,
+        "not_interested": 0,
+        "referral_given": 0
+      },
+      "other": {
+        "answered": 3,
+        "voicemail": 0,
+        "no_answer": 0,
+        "interested": 0,
+        "not_interested": 0,
+        "referral_given": 0
+      }
+    }
+  },
+  "time_of_day_bucket": {
+    "early_morning": {
+      "answered": 0,
+      "voicemail": 0,
+      "no_answer": 0,
+      "interested": 0,
+      "not_interested": 0,
+      "referral_given": 0
+    },
+    "morning": {
+      "answered": 4,
+      "voicemail": 0,
+      "no_answer": 1,
+      "interested": 2,
+      "not_interested": 0,
+      "referral_given": 0
+    },
+    "midday": {
+      "answered": 4,
+      "voicemail": 0,
+      "no_answer": 0,
+      "interested": 3,
+      "not_interested": 0,
+      "referral_given": 0
+    },
+    "lunch": {
+      "answered": 1,
+      "voicemail": 0,
+      "no_answer": 0,
+      "interested": 6,
+      "not_interested": 0,
+      "referral_given": 0
+    },
+    "afternoon": {
+      "answered": 0,
+      "voicemail": 0,
+      "no_answer": 0,
+      "interested": 2,
+      "not_interested": 0,
+      "referral_given": 0
+    },
+    "late_afternoon": {
+      "answered": 0,
+      "voicemail": 0,
+      "no_answer": 0,
+      "interested": 2,
+      "not_interested": 0,
+      "referral_given": 0
+    },
+    "evening": {
+      "answered": 0,
+      "voicemail": 0,
+      "no_answer": 0,
+      "interested": 3,
+      "not_interested": 0,
+      "referral_given": 0
+    }
+  },
+  "state": {
+    "XX": {
+      "answered": 0,
+      "voicemail": 0,
+      "no_answer": 1,
+      "interested": 2,
+      "not_interested": 0,
+      "referral_given": 0
+    },
+    "AZ": {
+      "answered": 9,
+      "voicemail": 0,
+      "no_answer": 0,
+      "interested": 14,
+      "not_interested": 0,
+      "referral_given": 0
+    },
+    "CO": {
+      "answered": 0,
+      "voicemail": 0,
+      "no_answer": 0,
+      "interested": 2,
+      "not_interested": 0,
+      "referral_given": 0
+    }
+  },
+  "_meta": {
+    "created": "2026-03-06T02:48:48.052705-07:00",
+    "last_updated": "2026-03-04T16:42:41.517549-07:00",
+    "total_calls": 28
+  }
+}
