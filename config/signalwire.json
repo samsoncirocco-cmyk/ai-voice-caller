@@ -89,5 +89,28 @@
     "created_via": "fabric_api"
   },
   "phone_number_old": "+16028985026",
-  "phone_number_old_id": "64c2447d-8ed2-4b9d-be7a-05cc7291e917"
+  "phone_number_old_id": "64c2447d-8ed2-4b9d-be7a-05cc7291e917",
+  "local_numbers": {
+    "SD_605": {
+      "number": "+16053035984",
+      "sid": "9ae04c04-a271-44c1-8777-8b5aecXXX",
+      "state": "SD",
+      "area_code": "605",
+      "purpose": "South Dakota local presence \u2014 K-12 + municipal"
+    },
+    "NE_402": {
+      "number": "+14022755273",
+      "sid": "57ab5184-9e61-4388-b335-db1cd5XXX",
+      "state": "NE",
+      "area_code": "402",
+      "purpose": "Nebraska local presence \u2014 K-12 + municipal"
+    },
+    "IA_515": {
+      "number": "+15152987809",
+      "sid": "51ca5c0c-ed02-426c-ad2c-ee7617XXX",
+      "state": "IA",
+      "area_code": "515",
+      "purpose": "Iowa local presence \u2014 K-12 + municipal"
+    }
+  }
 }
