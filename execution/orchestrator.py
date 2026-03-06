@@ -48,6 +48,37 @@ SLACK_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
 RATE_LIMIT_SECONDS = 300  # 1 call per agent per 5 minutes
 BUSINESS_TZ = "America/Phoenix"
 
+STATE_FROM_NUMBERS = {
+    "SD": "+16053035984",  # 605
+    "NE": "+14022755273",  # 402
+    "IA": "+15152987809",  # 515
+}
+DEFAULT_FROM_NUMBER = "+16028985026"  # 602 primary fallback
+
+PROMPT_K12 = "prompts/k12.txt"
+PROMPT_GOV = "prompts/paul.txt"
+PROMPT_COLD = "prompts/cold_outreach.txt"
+
+K12_PATTERNS = [
+    "school",
+    "district",
+    "school district",
+    "usd",
+    "k-12",
+    "k12",
+    "elementary",
+    "high school",
+    "middle school",
+    "community school",
+]
+
+GOV_PATTERNS = [
+    "municipal",
+    "county",
+    "city",
+    "government",
+]
+
 
 def _setup_logging(verbose: bool = False) -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -113,6 +144,32 @@ def _seconds_until_next_window(now: datetime | None = None) -> int:
 
     delta = target - now
     return max(60, int(delta.total_seconds()))
+
+
+def _select_from_number(state: str | None) -> str:
+    if not state:
+        return DEFAULT_FROM_NUMBER
+    return STATE_FROM_NUMBERS.get(state.strip().upper(), DEFAULT_FROM_NUMBER)
+
+
+def _contains_pattern(text: str, patterns: list[str]) -> bool:
+    s = (text or "").lower()
+    return any(p in s for p in patterns)
+
+
+def _select_prompt(account: dict, override_prompt: str | None = None) -> str:
+    if override_prompt:
+        return override_prompt
+
+    account_type = str(account.get("account_type") or "")
+    account_name = str(account.get("account_name") or "")
+    haystack = f"{account_type} {account_name}".strip()
+
+    if _contains_pattern(haystack, K12_PATTERNS):
+        return PROMPT_K12
+    if _contains_pattern(haystack, GOV_PATTERNS):
+        return PROMPT_GOV
+    return PROMPT_COLD
 
 
 def _post_slack(text: str, blocks: list | None = None) -> bool:
@@ -252,26 +309,43 @@ def _agent_loop(agent_id: str, args, stop_event: threading.Event) -> None:
             account_id = account["account_id"]
             account_name = account.get("account_name", "unknown")
             to_number = _to_e164(account.get("phone", ""))
+            account_state = account.get("state")
+            from_number = args.from_number or _select_from_number(account_state)
+            prompt_path = _select_prompt(account, args.prompt)
 
             if args.dry_run:
                 logging.info(
-                    "[%s] DRY RUN — would call %s (%s) -> %s",
-                    agent_id, account_name, account.get("phone"), to_number
+                    "[%s] DRY RUN — would call %s (%s) state=%s -> %s from=%s prompt=%s",
+                    agent_id,
+                    account_name,
+                    account.get("phone"),
+                    account_state,
+                    to_number,
+                    from_number,
+                    prompt_path,
                 )
                 # In dry-run, release immediately by marking no_answer
                 db.complete(account_id, "no_answer", "dry-run release")
                 last_call_ts = time.time()
                 continue
 
-            logging.info("[%s] Calling %s (%s)", agent_id, account_name, to_number)
+            logging.info(
+                "[%s] Calling %s (%s) state=%s from=%s prompt=%s",
+                agent_id,
+                account_name,
+                to_number,
+                account_state,
+                from_number,
+                prompt_path,
+            )
             call_started = datetime.now(timezone.utc)
 
             try:
                 make_call_v8.make_call(
                     to_number,
-                    args.from_number or make_call_v8.DEFAULT_FROM,
+                    from_number,
                     args.voice or make_call_v8.DEFAULT_VOICE,
-                    args.prompt or make_call_v8.DEFAULT_PROMPT,
+                    prompt_path,
                 )
             except Exception as exc:
                 logging.exception("[%s] make_call failed: %s", agent_id, exc)
@@ -352,6 +426,14 @@ def main() -> int:
         for t in threads:
             t.join(timeout=5)
         return 0
+
+
+class Orchestrator:
+    """Threaded orchestrator for state-aware outbound AI calling campaigns."""
+
+    @staticmethod
+    def run() -> int:
+        return main()
 
 
 if __name__ == "__main__":
