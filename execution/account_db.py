@@ -145,6 +145,26 @@ class AccountDB:
                 CREATE INDEX IF NOT EXISTS idx_accounts_next_call
                 ON accounts (next_call_at, call_status)
             """)
+            # ── opportunities table (populated by sfdc_live_sync) ─────────────
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS opportunities (
+                    opp_id           TEXT PRIMARY KEY,   -- local UUID
+                    sfdc_opp_id      TEXT UNIQUE NOT NULL,
+                    sfdc_account_id  TEXT NOT NULL,      -- SFDC Account Id (18-char)
+                    account_name     TEXT,
+                    opp_name         TEXT,
+                    stage            TEXT,               -- StageName from SFDC
+                    amount           REAL,               -- Amount (USD)
+                    close_date       TEXT,               -- YYYY-MM-DD
+                    probability      REAL,               -- 0–100
+                    state            TEXT,               -- BillingState
+                    synced_at        TEXT NOT NULL       -- ISO-8601 UTC
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_opps_sfdc_account
+                ON opportunities (sfdc_account_id)
+            """)
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -375,6 +395,236 @@ class AccountDB:
             """, (cutoff,))
             conn.execute("COMMIT")
         return cur.rowcount
+
+
+    def upsert_sfdc_account(
+        self,
+        sfdc_id: str,
+        name: str,
+        phone: str,
+        state: str,
+        vertical: str,
+        sfdc_type: str = "",
+    ) -> str:
+        """
+        Upsert an account from a live Salesforce sync.
+
+        Lookup order:
+          1. Match by sfdc_id — update metadata, preserve status/call_count
+          2. Match by phone — update sfdc_id/metadata, preserve status/call_count
+          3. No match — INSERT with status='new', call_count=0
+
+        Returns: 'inserted' | 'updated' | 'skipped'
+        """
+        now = _now_utc().isoformat()
+        phone_digits = _normalize_phone(phone)
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+
+            # 1. Match by sfdc_id
+            row = conn.execute(
+                "SELECT account_id FROM accounts WHERE sfdc_id = ?", (sfdc_id,)
+            ).fetchone()
+
+            if row:
+                conn.execute("""
+                    UPDATE accounts
+                    SET account_name = ?, phone = ?, state = ?, vertical = ?
+                    WHERE sfdc_id = ?
+                """, (name, phone_digits, state, vertical or sfdc_type, sfdc_id))
+                conn.execute("COMMIT")
+                return "updated"
+
+            # 2. Match by phone
+            row = conn.execute(
+                "SELECT account_id FROM accounts WHERE phone = ?", (phone_digits,)
+            ).fetchone()
+
+            if row:
+                conn.execute("""
+                    UPDATE accounts
+                    SET account_name = ?, sfdc_id = ?, state = ?, vertical = ?
+                    WHERE account_id = ?
+                """, (name, sfdc_id, state, vertical or sfdc_type, row["account_id"]))
+                conn.execute("COMMIT")
+                return "updated"
+
+            # 3. Insert new
+            account_id = str(uuid.uuid4())
+            conn.execute("""
+                INSERT INTO accounts
+                    (account_id, account_name, phone, state, vertical, sfdc_id,
+                     call_status, call_count, last_called_at, next_call_at,
+                     agent_id, outcome_notes, referral_source, created_at)
+                VALUES
+                    (?, ?, ?, ?, ?, ?,
+                     'new', 0, NULL, NULL,
+                     NULL, NULL, NULL, ?)
+            """, (account_id, name, phone_digits, state, vertical or sfdc_type, sfdc_id, now))
+            conn.execute("COMMIT")
+            return "inserted"
+
+    def upsert_referral_contact(
+        self,
+        sfdc_contact_id: str,
+        name: str,
+        phone: str,
+        account_name: str,
+        state: str,
+    ) -> str:
+        """
+        Queue a Salesforce Contact flagged as a referral.
+
+        Treats the contact as a new callable target:
+          - Keyed by sfdc_contact_id (stored in sfdc_id column)
+          - If already in DB: skip (preserve existing state)
+          - If new: insert with status='new', referral_source='sfdc-contact'
+
+        Returns: 'inserted' | 'skipped'
+        """
+        now = _now_utc().isoformat()
+        phone_digits = _normalize_phone(phone)
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+
+            # Already tracked?
+            row = conn.execute(
+                "SELECT account_id FROM accounts WHERE sfdc_id = ? OR phone = ?",
+                (sfdc_contact_id, phone_digits),
+            ).fetchone()
+
+            if row:
+                conn.execute("COMMIT")
+                return "skipped"
+
+            account_id = str(uuid.uuid4())
+            conn.execute("""
+                INSERT INTO accounts
+                    (account_id, account_name, phone, state, vertical, sfdc_id,
+                     call_status, call_count, last_called_at, next_call_at,
+                     agent_id, outcome_notes, referral_source, created_at)
+                VALUES
+                    (?, ?, ?, ?, ?, ?,
+                     'new', 0, NULL, NULL,
+                     NULL, NULL, 'sfdc-referral', ?)
+            """, (account_id, name or account_name, phone_digits, state, "Referral",
+                  sfdc_contact_id, now))
+            conn.execute("COMMIT")
+            return "inserted"
+
+
+    def upsert_opportunity(
+        self,
+        sfdc_opp_id: str,
+        opp_name: str,
+        sfdc_account_id: str,
+        account_name: str,
+        stage: str,
+        amount: Optional[float],
+        close_date: str,
+        probability: Optional[float] = None,
+        state: str = "",
+    ) -> str:
+        """
+        Insert or update a Salesforce Opportunity in the `opportunities` table.
+
+        Match key: sfdc_opp_id (SFDC 18-char Id).
+        Preserves local opp_id on updates.
+
+        Returns: 'inserted' | 'updated'
+        """
+        now = _now_utc().isoformat()
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT opp_id FROM opportunities WHERE sfdc_opp_id = ?",
+                (sfdc_opp_id,),
+            ).fetchone()
+
+            if row:
+                conn.execute("""
+                    UPDATE opportunities
+                    SET opp_name        = ?,
+                        sfdc_account_id = ?,
+                        account_name    = ?,
+                        stage           = ?,
+                        amount          = ?,
+                        close_date      = ?,
+                        probability     = ?,
+                        state           = ?,
+                        synced_at       = ?
+                    WHERE sfdc_opp_id = ?
+                """, (opp_name, sfdc_account_id, account_name, stage,
+                      amount, close_date, probability, state, now, sfdc_opp_id))
+                conn.execute("COMMIT")
+                return "updated"
+
+            conn.execute("""
+                INSERT INTO opportunities
+                    (opp_id, sfdc_opp_id, sfdc_account_id, account_name,
+                     opp_name, stage, amount, close_date, probability, state, synced_at)
+                VALUES
+                    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (str(uuid.uuid4()), sfdc_opp_id, sfdc_account_id, account_name,
+                  opp_name, stage, amount, close_date, probability, state, now))
+            conn.execute("COMMIT")
+            return "inserted"
+
+    def update_state_from_opportunity(
+        self,
+        sfdc_account_id: str,
+        new_status: str,
+    ) -> int:
+        """
+        Update the AI caller state for the account that owns a given SFDC
+        Account Id when an opportunity reaches a terminal stage.
+
+        Rules:
+          - Only update accounts that are NOT already in a terminal state
+            ('interested', 'dnc', 'referral_given', 'converted').
+          - Closed Won  → 'converted'  (stop calling, human follow-up)
+          - Closed Lost → 'not_interested' (reschedule per cooldown)
+
+        Returns: number of accounts updated (0 or 1).
+        """
+        if new_status not in VALID_STATUSES:
+            raise ValueError(f"Invalid status: {new_status!r}")
+
+        TERMINAL = {"interested", "dnc", "referral_given", "converted"}
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute("""
+                UPDATE accounts
+                SET call_status = ?,
+                    agent_id    = NULL,
+                    outcome_notes = COALESCE(outcome_notes || ' | SFDC stage sync', 'SFDC stage sync')
+                WHERE sfdc_id = ?
+                  AND call_status NOT IN ('interested','dnc','referral_given','converted')
+            """, (new_status, sfdc_account_id))
+            conn.execute("COMMIT")
+            return cur.rowcount
+
+    def get_opportunity(self, sfdc_opp_id: str) -> Optional[Dict]:
+        """Fetch a single opportunity by its SFDC Id."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM opportunities WHERE sfdc_opp_id = ?",
+                (sfdc_opp_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_opportunities_for_account(self, sfdc_account_id: str) -> List[Dict]:
+        """Return all opportunities linked to a SFDC Account Id."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM opportunities WHERE sfdc_account_id = ? ORDER BY close_date",
+                (sfdc_account_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ── CLI seed entrypoint ───────────────────────────────────────────────────────
