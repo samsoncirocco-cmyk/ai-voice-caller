@@ -161,7 +161,9 @@ class TestSOQLBuilders(unittest.TestCase):
     def test_opps_soql_contains_last_n_hours(self):
         soql = _opportunities_soql(24, ["NE"])
         self.assertIn("LAST_N_HOURS:24", soql)
-        self.assertIn("'NE'", soql)
+        # Note: opps SOQL uses OwnerId filter (not BillingState) because
+        # cross-object WHERE on Account.BillingState is not supported via REST API
+        self.assertIn("OwnerId", soql)
 
     def test_opps_soql_selects_stage(self):
         soql = _opportunities_soql(24, ["IA"])

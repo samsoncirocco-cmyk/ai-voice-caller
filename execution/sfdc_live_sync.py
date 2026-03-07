@@ -71,11 +71,30 @@ def _post_slack(text: str) -> bool:
 
 # ── sf CLI helpers ────────────────────────────────────────────────────────────
 
+def _resolve_sf_binary() -> str:
+    """Return full path to the sf CLI, checking common install locations."""
+    candidates = [
+        "/home/samson/.local/bin/sf",
+        "/usr/local/bin/sf",
+        "/usr/bin/sf",
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    # fallback — let PATH resolution handle it
+    return "sf"
+
+
+_SF_BIN = _resolve_sf_binary()
+
+
 def _run_sf(args: List[str], timeout: int = 60) -> Tuple[bool, str]:
     """Run a `sf` CLI command; return (success, stdout/stderr)."""
+    # Replace bare 'sf' with resolved path for cron-safe execution
+    resolved_args = [_SF_BIN if a == "sf" else a for a in args]
     try:
         proc = subprocess.run(
-            args,
+            resolved_args,
             capture_output=True,
             text=True,
             check=False,
@@ -84,7 +103,7 @@ def _run_sf(args: List[str], timeout: int = 60) -> Tuple[bool, str]:
     except subprocess.TimeoutExpired:
         return False, f"sf CLI timed out after {timeout}s"
     except FileNotFoundError:
-        return False, "sf CLI not found"
+        return False, f"sf CLI not found at {_SF_BIN}"
     except Exception as exc:
         return False, f"sf CLI error: {exc}"
 
@@ -190,9 +209,9 @@ def _hours_to_iso(hours: int) -> str:
 
 def _accounts_soql(hours: int, states: List[str]) -> str:
     state_list = ", ".join(f"'{s}'" for s in states)
-    # Use ISO datetime instead of LAST_N_HOURS — more portable across REST API versions
+    # Use LAST_N_HOURS SOQL function — cleaner and avoids timezone edge cases
     time_filter = (
-        f"AND LastModifiedDate >= {_hours_to_iso(hours)} " if hours > 0 else ""
+        f"AND LastModifiedDate >= LAST_N_HOURS:{hours} " if hours > 0 else ""
     )
     return (
         "SELECT Id, Name, Phone, BillingState, Type, Industry "
@@ -211,8 +230,9 @@ SAMSON_USER_ID = "005Hr00000INgbqIAD"  # scirocco@fortinet.com
 def _opportunities_soql(hours: int, states: List[str]) -> str:
     # Cross-object WHERE (Account.BillingState) not supported in REST API.
     # Filter by OwnerId (Samson's territory) + stage to keep scope tight.
+    # Use LAST_N_HOURS SOQL function — cleaner and avoids timezone edge cases
     time_filter = (
-        f"AND LastModifiedDate >= {_hours_to_iso(hours)} " if hours > 0 else ""
+        f"AND LastModifiedDate >= LAST_N_HOURS:{hours} " if hours > 0 else ""
     )
     return (
         "SELECT Id, Name, AccountId, Account.Name, Account.BillingState, "
