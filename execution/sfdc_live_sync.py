@@ -182,11 +182,17 @@ def _normalize_phone(raw: str) -> str:
 
 # ── SOQL builders ─────────────────────────────────────────────────────────────
 
+def _hours_to_iso(hours: int) -> str:
+    """Convert hours lookback to ISO 8601 UTC datetime string for SOQL."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    return cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _accounts_soql(hours: int, states: List[str]) -> str:
     state_list = ", ".join(f"'{s}'" for s in states)
-    # LastModifiedDate filter for live sync; fall back to full pull if hours <= 0
+    # Use ISO datetime instead of LAST_N_HOURS — more portable across REST API versions
     time_filter = (
-        f"AND LastModifiedDate >= LAST_N_HOURS:{hours} " if hours > 0 else ""
+        f"AND LastModifiedDate >= {_hours_to_iso(hours)} " if hours > 0 else ""
     )
     return (
         "SELECT Id, Name, Phone, BillingState, Type, Industry "
@@ -199,18 +205,21 @@ def _accounts_soql(hours: int, states: List[str]) -> str:
     )
 
 
+SAMSON_USER_ID = "005Hr00000INgbqIAD"  # scirocco@fortinet.com
+
+
 def _opportunities_soql(hours: int, states: List[str]) -> str:
-    state_list = ", ".join(f"'{s}'" for s in states)
+    # Cross-object WHERE (Account.BillingState) not supported in REST API.
+    # Filter by OwnerId (Samson's territory) + stage to keep scope tight.
     time_filter = (
-        f"AND LastModifiedDate >= LAST_N_HOURS:{hours} " if hours > 0 else ""
+        f"AND LastModifiedDate >= {_hours_to_iso(hours)} " if hours > 0 else ""
     )
     return (
         "SELECT Id, Name, AccountId, Account.Name, Account.BillingState, "
-        "StageName, Amount, CloseDate, Probability, "
-        "Account.Phone, Account.BillingState "
+        "StageName, Amount, CloseDate, Probability, Account.Phone "
         "FROM Opportunity "
-        f"WHERE Account.BillingState IN ({state_list}) "
-        f"AND IsDeleted = false "
+        f"WHERE OwnerId = '{SAMSON_USER_ID}' "
+        f"AND StageName IN ('Closed Won', 'Closed Lost') "
         f"{time_filter}"
         "ORDER BY LastModifiedDate DESC"
     )
