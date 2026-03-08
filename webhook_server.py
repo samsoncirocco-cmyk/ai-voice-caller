@@ -5,9 +5,15 @@ webhook_server.py — Central webhook server for hooks.6eyes.dev
 Runs on port 18790 (cloudflared tunnel → hooks.6eyes.dev)
 
 Routes:
-  POST /voice-caller/post-call   ← SignalWire post_prompt_url callback
-  GET  /health                   ← Health check
-  GET  /                         ← Status
+  POST /voice-caller/post-call          ← SignalWire post_prompt_url callback
+  POST /voice-caller/sfdc-sync          ← V2: SFDC live-sync (call_outcome | referral | new_lead)
+  GET  /voice-caller/sfdc-sync/status   ← V2: Live-sync log tail + stats
+  POST /outlook-sync                    ← Outlook inbox/calendar push from work machine
+  GET  /outlook-sync                    ← Latest Outlook snapshot
+  GET  /voice-caller/agents             ← Per-agent performance stats
+  GET  /voice-caller/activity           ← Recent call log entries
+  GET  /health                          ← Health check
+  GET  /                                ← Status + route listing
 
 Usage:
   python3 webhook_server.py
@@ -16,8 +22,10 @@ Usage:
 
 import json
 import os
+import re as _re
 import subprocess
 import threading
+import time
 from datetime import datetime, timezone
 from flask import Flask, request, jsonify
 
@@ -39,6 +47,12 @@ def index():
         "status": "ok",
         "routes": [
             "POST /voice-caller/post-call",
+            "POST /voice-caller/sfdc-sync          ← V2 live-sync (call_outcome|referral|new_lead)",
+            "GET  /voice-caller/sfdc-sync/status   ← sync log tail + stats",
+            "POST /outlook-sync",
+            "GET  /outlook-sync",
+            "GET  /voice-caller/agents",
+            "GET  /voice-caller/activity",
             "GET  /health",
         ]
     }), 200
@@ -92,6 +106,49 @@ def post_call_summary():
     threading.Thread(target=push_to_sf, args=(call_id,), daemon=True).start()
 
     return jsonify({"status": "logged", "call_id": call_id}), 200
+
+
+OUTLOOK_SYNC_FILE = os.path.join(os.path.dirname(__file__), "logs", "outlook-sync-latest.json")
+OUTLOOK_BRIDGE_TOKEN = "outlook-bridge-2026"
+
+
+@app.route("/outlook-sync", methods=["POST"])
+def outlook_sync():
+    """
+    Receives Outlook inbox + calendar data from the work machine bridge.
+    Stores latest snapshot to logs/outlook-sync-latest.json.
+    """
+    token = request.headers.get("X-Bridge-Token", "")
+    if token != OUTLOOK_BRIDGE_TOKEN:
+        return jsonify({"error": "unauthorized"}), 401
+
+    data = request.json or {}
+    data["received_at"] = datetime.now(timezone.utc).isoformat()
+    data["source"] = data.get("source", "work-machine")
+
+    email_count = len(data.get("inbox", data.get("emails", [])))
+    cal_count = len(data.get("calendar", []))
+
+    with open(OUTLOOK_SYNC_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+    print(f"[outlook-sync] {data['received_at']} — {email_count} emails, {cal_count} calendar events")
+    return jsonify({"status": "ok", "emails": email_count, "calendar": cal_count}), 200
+
+
+@app.route("/outlook-sync", methods=["GET"])
+def outlook_sync_read():
+    """Returns the latest Outlook sync snapshot."""
+    token = request.headers.get("X-Bridge-Token", "")
+    if token != OUTLOOK_BRIDGE_TOKEN:
+        return jsonify({"error": "unauthorized"}), 401
+
+    if not os.path.exists(OUTLOOK_SYNC_FILE):
+        return jsonify({"status": "no_data", "message": "No sync received yet"}), 404
+
+    with open(OUTLOOK_SYNC_FILE) as f:
+        data = json.load(f)
+    return jsonify(data), 200
 
 
 AGENT_PROFILES = {
@@ -345,6 +402,480 @@ def call_activity():
         "count": len(entries),
         "entries": entries,
     }), 200
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# V2 SFDC LIVE SYNC
+# Receives structured outbound-event objects and immediately upserts them into
+# Salesforce via sfdc_push.py (call outcomes) or direct sf-CLI Task creation
+# (referrals and new leads).  All attempts are durably logged and retried with
+# exponential back-off so no event is silently dropped.
+# ══════════════════════════════════════════════════════════════════════════════
+
+_SFDC_SYNC_LOG  = os.path.join(LOG_DIR, "sfdc-live-sync.jsonl")
+_SFDC_MAX_TRIES = 3          # total attempts (1 initial + 2 retries)
+_SFDC_BASE_WAIT = 5          # seconds; doubles each retry → 5 / 10 / 20
+_SFDC_SF_ALIAS  = "fortinet"
+_SFDC_SCRIPT    = os.path.join(os.path.dirname(__file__), "sfdc_push.py")
+
+
+# ── structured logger ─────────────────────────────────────────────────────────
+
+def _sync_log(event: dict, status: str, message: str, attempt: int = 0) -> None:
+    """Append one JSON line to sfdc-live-sync.jsonl and echo to stdout."""
+    entry = {
+        "logged_at":  datetime.now(timezone.utc).isoformat(),
+        "event_type": event.get("event_type", "unknown"),
+        "call_id":    event.get("call_id"),
+        "status":     status,      # pending | retrying | success | failed | skipped
+        "attempt":    attempt,
+        "message":    message[:500],
+    }
+    with open(_SFDC_SYNC_LOG, "a") as _f:
+        _f.write(json.dumps(entry) + "\n")
+    print(
+        f"[sfdc-sync] {status:8s} | {entry['event_type']:12s} | "
+        f"call={entry['call_id'] or '—'} | attempt={attempt} | {message[:100]}"
+    )
+
+
+# ── sf CLI helpers ────────────────────────────────────────────────────────────
+
+def _run_sf_cmd(args: list, timeout: int = 30) -> tuple:
+    """Run a `sf` CLI command. Returns (success: bool, stdout: str)."""
+    try:
+        proc = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+            cwd=os.path.dirname(__file__),
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"sf CLI timed out after {timeout}s"
+    except FileNotFoundError:
+        return False, "sf CLI not found — check PATH"
+    except Exception as exc:
+        return False, f"sf CLI error: {exc}"
+
+    if proc.returncode != 0:
+        return False, (proc.stderr or proc.stdout).strip()
+    return True, proc.stdout
+
+
+def _sfdc_lookup_account(phone: str) -> dict | None:
+    """
+    Look up a Salesforce Account by phone number (last 10 digits).
+    Returns {"Id": "...", "Name": "..."} or None.
+    """
+    if not phone:
+        return None
+    digits = _re.sub(r"\D+", "", phone)
+    last10 = digits[-10:] if len(digits) >= 10 else digits
+    if not last10:
+        return None
+
+    soql = f"SELECT Id, Name FROM Account WHERE Phone LIKE '%{last10}%' LIMIT 1"
+    ok, out = _run_sf_cmd([
+        "sf", "data", "query",
+        "--query", soql,
+        "--json",
+        "--target-org", _SFDC_SF_ALIAS,
+    ])
+    if not ok:
+        return None
+    try:
+        records = json.loads(out).get("result", {}).get("records", [])
+        if not records:
+            return None
+        return {"Id": records[0]["Id"], "Name": records[0].get("Name", "")}
+    except Exception:
+        return None
+
+
+def _sfdc_create_task(
+    account_id: str,
+    subject: str,
+    date_str: str,
+    description: str,
+    call_type: str = "Outbound",
+) -> tuple:
+    """
+    Create a Completed Task in Salesforce linked to an Account.
+    Returns (success: bool, message: str).
+    """
+    # Escape single-quotes in field values so the CLI doesn't choke
+    def _esc(s: str) -> str:
+        return str(s).replace("'", "\\'").replace("\n", " | ")[:1000]
+
+    values = (
+        f"Subject='{_esc(subject)}' "
+        f"Status='Completed' "
+        f"ActivityDate='{date_str}' "
+        f"WhatId='{account_id}' "
+        f"Type='Call' "
+        f"CallType='{call_type}' "
+        f"Description='{_esc(description)}'"
+    )
+    ok, out = _run_sf_cmd([
+        "sf", "data", "create", "record",
+        "--sobject", "Task",
+        "--values", values,
+        "--json",
+        "--target-org", _SFDC_SF_ALIAS,
+    ])
+    if not ok:
+        return False, out
+
+    try:
+        task_id = json.loads(out).get("result", {}).get("id", "")
+        return True, f"Task {task_id} created on {account_id}"
+    except Exception as exc:
+        return False, f"Task parse error: {exc}"
+
+
+def _event_date(event: dict) -> str:
+    """Extract YYYY-MM-DD from event timestamp (defaults to today UTC)."""
+    ts = event.get("timestamp")
+    if ts:
+        try:
+            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            return dt.date().isoformat()
+        except Exception:
+            pass
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _ensure_in_call_log(event: dict) -> None:
+    """
+    If a call_outcome event isn't already in call_summaries.jsonl, append it
+    so that sfdc_push.py can find it by call_id.
+    """
+    call_id = event.get("call_id")
+    if not call_id:
+        return
+
+    # Check existing log
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE) as _f:
+            for _line in _f:
+                try:
+                    if json.loads(_line.strip()).get("call_id") == call_id:
+                        return  # already present
+                except Exception:
+                    pass
+
+    entry = {
+        "timestamp": event.get("timestamp") or datetime.now(timezone.utc).isoformat(),
+        "call_id":   call_id,
+        "to":        event.get("to", ""),
+        "from":      event.get("from", ""),
+        "summary":   event.get("summary", ""),
+        "raw":       event,
+        "_source":   "sfdc-sync-webhook",
+    }
+    with open(LOG_FILE, "a") as _f:
+        _f.write(json.dumps(entry) + "\n")
+
+
+# ── per-event-type push handlers ──────────────────────────────────────────────
+
+def _push_call_outcome(event: dict) -> tuple:
+    """
+    Push a call_outcome event to SFDC via sfdc_push.py.
+    sfdc_push.py looks up the Account by phone then creates a Task.
+    """
+    call_id = event.get("call_id", "").strip()
+    if not call_id:
+        return False, "call_id is required for call_outcome events"
+
+    # Make sure the record exists in call_summaries.jsonl for sfdc_push.py
+    _ensure_in_call_log(event)
+
+    ok, out = _run_sf_cmd(
+        ["python3", _SFDC_SCRIPT, "--call-id", call_id],
+        timeout=60,
+    )
+    output = out.strip() or ("ok" if ok else "unknown error")
+    return ok, output
+
+
+def _push_referral(event: dict) -> tuple:
+    """
+    Push a referral event — creates a SFDC Task on the caller's Account.
+    Fields: referral_name, referral_org, referral_phone (all optional but useful).
+    """
+    phone = event.get("to") or event.get("phone", "")
+    account = _sfdc_lookup_account(phone)
+    if not account:
+        return False, f"No SFDC Account found for phone '{phone}'"
+
+    referral_name  = event.get("referral_name", "").strip()
+    referral_org   = event.get("referral_org", "").strip()
+    referral_phone = event.get("referral_phone", "").strip()
+    date_str       = _event_date(event)
+    call_id        = event.get("call_id", "n/a")
+    summary        = event.get("summary", "")
+
+    subject = f"AI Caller — Referral: {referral_name or referral_org or 'unknown'}"
+    description = (
+        f"Referral captured during AI outbound call ({date_str}).\n"
+        f"Referred Name : {referral_name}\n"
+        f"Referred Org  : {referral_org}\n"
+        f"Referred Phone: {referral_phone}\n"
+        f"Call ID       : {call_id}\n"
+        f"Summary       : {summary}"
+    )
+    return _sfdc_create_task(account["Id"], subject, date_str, description)
+
+
+def _push_new_lead(event: dict) -> tuple:
+    """
+    Push a new_lead event — creates a SFDC Task capturing the lead details.
+    Fields: lead_name, lead_org, lead_phone, lead_email (all optional but useful).
+    Falls back to the caller's account when the lead's phone isn't in SFDC.
+    """
+    lead_phone = event.get("lead_phone", "").strip()
+    caller_phone = event.get("to") or event.get("phone", "")
+
+    # Try lead's org first, then caller's org
+    account = _sfdc_lookup_account(lead_phone) or _sfdc_lookup_account(caller_phone)
+    if not account:
+        return False, (
+            f"No SFDC Account found for lead_phone='{lead_phone}' "
+            f"or caller='{caller_phone}'"
+        )
+
+    lead_name  = event.get("lead_name", "").strip()
+    lead_org   = event.get("lead_org", "").strip()
+    lead_email = event.get("lead_email", "").strip()
+    date_str   = _event_date(event)
+    call_id    = event.get("call_id", "n/a")
+    summary    = event.get("summary", "")
+
+    subject = f"AI Caller — New Lead: {lead_name or lead_org or 'unknown'}"
+    description = (
+        f"New lead captured during AI outbound call ({date_str}).\n"
+        f"Lead Name  : {lead_name}\n"
+        f"Lead Org   : {lead_org}\n"
+        f"Lead Phone : {lead_phone}\n"
+        f"Lead Email : {lead_email}\n"
+        f"Call ID    : {call_id}\n"
+        f"Summary    : {summary}"
+    )
+    return _sfdc_create_task(account["Id"], subject, date_str, description)
+
+
+# Registry — add new event types here
+_SFDC_HANDLERS: dict = {
+    "call_outcome": _push_call_outcome,
+    "referral":     _push_referral,
+    "new_lead":     _push_new_lead,
+}
+
+
+# ── retry engine ──────────────────────────────────────────────────────────────
+
+def _sync_with_retry(event: dict) -> tuple:
+    """
+    Attempt to push *event* to SFDC.  On failure, retry up to _SFDC_MAX_TRIES
+    total attempts using exponential back-off (_SFDC_BASE_WAIT × 2^n seconds).
+    Returns (success: bool, final_message: str).
+    """
+    event_type = event.get("event_type", "")
+    handler = _SFDC_HANDLERS.get(event_type)
+    if handler is None:
+        msg = f"Unknown event_type '{event_type}'. Valid: {list(_SFDC_HANDLERS)}"
+        _sync_log(event, "failed", msg)
+        return False, msg
+
+    delay = _SFDC_BASE_WAIT
+    last_message = ""
+
+    for attempt in range(1, _SFDC_MAX_TRIES + 1):
+        status = "pending" if attempt == 1 else "retrying"
+        _sync_log(event, status, f"attempt {attempt}/{_SFDC_MAX_TRIES}", attempt)
+
+        try:
+            ok, message = handler(event)
+        except Exception as exc:
+            ok, message = False, f"Unhandled exception: {exc}"
+
+        last_message = message
+
+        if ok:
+            _sync_log(event, "success", message, attempt)
+            return True, message
+
+        final_status = "failed" if attempt == _SFDC_MAX_TRIES else "retrying"
+        _sync_log(event, final_status, message, attempt)
+
+        if attempt < _SFDC_MAX_TRIES:
+            time.sleep(delay)
+            delay *= 2  # exponential back-off: 5 → 10 → 20s
+
+    return False, last_message
+
+
+# ── Flask routes ──────────────────────────────────────────────────────────────
+
+@app.route("/voice-caller/sfdc-sync", methods=["POST"])
+def sfdc_live_sync_route():
+    """
+    V2 SFDC Live Sync — receive an outbound event and immediately upsert to SF.
+
+    Request body (JSON):
+      {
+        "event_type": "call_outcome" | "referral" | "new_lead",  ← REQUIRED
+        "call_id":    "<uuid>",          ← required for call_outcome
+        "timestamp":  "<ISO8601>",       ← optional, defaults to now UTC
+        "to":         "+16055551234",    ← target phone (used for Account lookup)
+        "from":       "+16028985026",    ← caller phone
+        "summary":    "<call summary>",
+
+        # call_outcome fields (summary is the primary payload):
+        "outcome":    "Connected|Meeting Booked|...",
+
+        # referral fields:
+        "referral_name":  "Jane Doe",
+        "referral_org":   "Aberdeen USD",
+        "referral_phone": "+16055559999",
+
+        # new_lead fields:
+        "lead_name":  "John Smith",
+        "lead_org":   "Watertown School District",
+        "lead_phone": "+16055550000",
+        "lead_email": "john@watertown.k12.sd.us"
+      }
+
+    Response:
+      200  {"status": "synced",   "event_type": "...", "message": "..."}
+      202  {"status": "pending",  ...}   ← first attempt still running (rare)
+      400  {"error": "...",       "valid_types": [...]}
+      502  {"status": "failed",   "event_type": "...", "message": "...", "retries": N}
+    """
+    data = request.json or {}
+    event_type = data.get("event_type", "").strip()
+
+    if not event_type:
+        return jsonify({
+            "error": "event_type is required",
+            "valid_types": list(_SFDC_HANDLERS),
+        }), 400
+
+    if event_type not in _SFDC_HANDLERS:
+        return jsonify({
+            "error": f"Unknown event_type '{event_type}'",
+            "valid_types": list(_SFDC_HANDLERS),
+        }), 400
+
+    # Stamp timestamp if caller omitted it
+    if not data.get("timestamp"):
+        data["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+    event = dict(data)  # snapshot before threading
+    result: dict = {"ok": False, "message": ""}
+
+    def _run() -> None:
+        ok, msg = _sync_with_retry(event)
+        result["ok"]      = ok
+        result["message"] = msg
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    # Block up to 90 s: covers 3 attempts × (5+10+20 s back-off) comfortably.
+    # If SF is just slow the caller waits but gets a definitive answer.
+    t.join(timeout=90)
+
+    if t.is_alive():
+        # Still running — background thread will finish; return 202
+        return jsonify({
+            "status":     "pending",
+            "event_type": event_type,
+            "message":    "Sync in progress (90 s timeout exceeded, continuing in background)",
+        }), 202
+
+    if result["ok"]:
+        return jsonify({
+            "status":     "synced",
+            "event_type": event_type,
+            "message":    result["message"],
+        }), 200
+
+    return jsonify({
+        "status":     "failed",
+        "event_type": event_type,
+        "message":    result["message"],
+        "retries":    _SFDC_MAX_TRIES,
+    }), 502
+
+
+@app.route("/voice-caller/sfdc-sync/status", methods=["GET"])
+def sfdc_live_sync_status():
+    """
+    Return a tail of sfdc-live-sync.jsonl + aggregate stats.
+    Query params:
+      ?n=50   — number of log entries to return (default 50, max 500)
+    """
+    try:
+        n = min(int(request.args.get("n", 50)), 500)
+    except ValueError:
+        n = 50
+
+    entries = []
+    stats: dict = {
+        "total":   0,
+        "success": 0,
+        "failed":  0,
+        "retrying": 0,
+        "pending": 0,
+    }
+    by_event_type: dict = {}
+
+    if os.path.exists(_SFDC_SYNC_LOG):
+        with open(_SFDC_SYNC_LOG) as _f:
+            lines = [l.strip() for l in _f if l.strip()]
+
+        for line in lines:
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            # Aggregate totals (across entire file, not just the tail)
+            s = rec.get("status", "")
+            if s in stats:
+                stats[s] += 1
+            stats["total"] += 1
+
+            et = rec.get("event_type", "unknown")
+            by_event_type.setdefault(et, {"total": 0, "success": 0, "failed": 0})
+            by_event_type[et]["total"] += 1
+            if s == "success":
+                by_event_type[et]["success"] += 1
+            elif s == "failed":
+                by_event_type[et]["failed"] += 1
+
+        # Return last N entries in reverse-chronological order
+        for line in reversed(lines[-n:]):
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+
+    return jsonify({
+        "log_file":      _SFDC_SYNC_LOG,
+        "stats":         stats,
+        "by_event_type": by_event_type,
+        "entries":       entries,
+        "count":         len(entries),
+    }), 200
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# END V2 SFDC LIVE SYNC
+# ══════════════════════════════════════════════════════════════════════════════
 
 
 if __name__ == "__main__":
