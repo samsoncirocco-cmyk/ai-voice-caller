@@ -117,7 +117,36 @@ def build_swml(prompt_text, voice, static_greeting=None):
     }
 
 
+def check_signalwire_balance():
+    """Check SignalWire balance before placing call. Returns balance in dollars or None on error."""
+    auth_b64 = base64.b64encode(f"{PROJECT_ID}:{AUTH_TOKEN}".encode()).decode()
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Basic {auth_b64}"
+    }
+    try:
+        # SignalWire balance endpoint
+        url = f"https://{SPACE_URL}/api/relay/rest/accounts/{PROJECT_ID}"
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            balance = data.get("balance", 0)
+            return float(balance)
+    except Exception as e:
+        print(f"⚠️  Could not check balance: {e}")
+    return None
+
+
 def make_call(to_number, from_number, voice, prompt_path, static_greeting=None):
+    # BUDGET GUARD: Check balance before placing call
+    balance = check_signalwire_balance()
+    if balance is not None and balance < 2.0:
+        print(f"\n❌ BUDGET GUARD: SignalWire balance (${balance:.2f}) is below $2. Call blocked.")
+        print("   Top up account or get explicit approval from Samson to proceed.")
+        return
+    elif balance is not None:
+        print(f"💰 Balance: ${balance:.2f}")
+    
     prompt_text = load_prompt(prompt_path)
     auth_b64 = base64.b64encode(f"{PROJECT_ID}:{AUTH_TOKEN}".encode()).decode()
     swml = build_swml(prompt_text, voice, static_greeting=static_greeting)
@@ -127,6 +156,7 @@ def make_call(to_number, from_number, voice, prompt_path, static_greeting=None):
         "params": {
             "from": from_number,
             "to": to_number,
+            "max_duration": 90,  # Hard cap: 90 seconds. Prevents runaway calls.
             "swml": swml
         }
     }
