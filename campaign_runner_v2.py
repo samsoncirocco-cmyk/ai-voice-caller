@@ -22,10 +22,18 @@ Usage:
   # Run during business hours only (auto-pauses outside window)
   python3 campaign_runner_v2.py campaigns/sled-territory-832.csv --business-hours
 
+  # Use SmartRouter for intelligent routing (default when using accounts.db mode)
+  python3 campaign_runner_v2.py --db campaigns/accounts.db --limit 10
+
 Requires:
   - SignalWire credentials in config/signalwire.json
   - OPENROUTER_API_KEY and/or OPENAI_API_KEY in .env
   - webhook_server.py running on hooks.6eyes.dev
+
+Routing Rules (GSD - 2026-03-09):
+  - K-12         → +16028985026 + prompts/paul.txt
+  - Municipal/Gov→ +16028985026 + prompts/paul.txt
+  - Unknown/Cold → +14806024668 + prompts/cold_outreach.txt
 """
 
 import argparse
@@ -44,10 +52,40 @@ import requests
 
 # Add parent to path for research_agent import
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "execution"))
 from research_agent import research_account, build_dynamic_swml
+
+# SmartRouter for intelligent vertical-based routing
+try:
+    from smart_router import SmartRouter
+except ImportError:
+    SmartRouter = None  # Fallback: use legacy CSV mode
 
 DEFAULT_PROMPT = "prompts/paul.txt"
 DEFAULT_VOICE = "openai.onyx"
+
+# ─── State-Based Routing (2026-03-09) ────────────────────────────────
+# State → local presence number (605/402/515 for SD/NE/IA)
+STATE_FROM_NUMBERS = {
+    "SD": "+16053035984",  # 605 - South Dakota local presence
+    "NE": "+14022755273",  # 402 - Nebraska local presence
+    "IA": "+15152987809",  # 515 - Iowa local presence
+}
+DEFAULT_FROM_NUMBER = "+16028985026"  # 602 - fallback for non-territory states
+
+# Vertical → prompt_file mapping (from_number determined by state, not vertical)
+VERTICAL_PROMPTS = {
+    "k12":        "prompts/paul.txt",
+    "government": "prompts/paul.txt",
+    "higher_ed":  "prompts/cold_outreach.txt",
+    "other":      "prompts/cold_outreach.txt",
+}
+
+def select_from_number(state: str) -> str:
+    """Select outbound number based on account state for local presence."""
+    if not state:
+        return DEFAULT_FROM_NUMBER
+    return STATE_FROM_NUMBERS.get(state.strip().upper(), DEFAULT_FROM_NUMBER)
 
 # ─── Paths & Config ─────────────────────────────────────────────
 
@@ -374,25 +412,220 @@ def run_campaign(csv_path, args):
     print(f"  Summaries: {LOG_DIR / 'call_summaries.jsonl'}")
 
 
+# ─── SmartRouter-based Campaign Runner ──────────────────────────
+
+def run_campaign_db(args):
+    """
+    Run campaign using SmartRouter with accounts.db (default routing layer).
+    
+    This is the primary mode — uses intelligent routing based on vertical
+    classification with GSD-defined rules:
+      - K-12         → +16028985026 + paul.txt
+      - Municipal/Gov→ +16028985026 + paul.txt  
+      - Unknown/Cold → +14806024668 + cold_outreach.txt
+    """
+    if SmartRouter is None:
+        print("Error: SmartRouter not available. Install execution/smart_router.py")
+        sys.exit(1)
+    
+    router = SmartRouter(
+        db_path=args.db,
+        bypass_time_windows=args.bypass_time_windows,
+    )
+    
+    print(f"\n{'='*60}")
+    print("SMART ROUTER MODE")
+    print(f"  Database: {args.db}")
+    print(f"  Bypass time windows: {args.bypass_time_windows}")
+    print(f"  Limit: {args.limit or 'unlimited'}")
+    print(f"  Interval: {args.interval}s between calls")
+    if args.dry_run:
+        print("  *** DRY RUN — routing decisions only, no calls ***")
+    print(f"\n  State-based routing (local presence):")
+    for state, num in STATE_FROM_NUMBERS.items():
+        print(f"    {state} → {num}")
+    print(f"    (fallback) → {DEFAULT_FROM_NUMBER}")
+    print(f"\n  Vertical → Prompt mapping:")
+    for vertical, prompt in VERTICAL_PROMPTS.items():
+        print(f"    {vertical:12} → {prompt}")
+    print(f"{'='*60}\n")
+    
+    # Get DB stats
+    stats = router.db.get_stats()
+    print(f"Account status: {json.dumps(stats, indent=2)}")
+    
+    calls_made = 0
+    # SAFETY 2026-03-09: Hard cap at 50 calls if no --limit provided.
+    # Previous default was 999999 — could call entire account list uncontrolled.
+    calls_limit = args.limit or 50
+    consecutive_failures = 0
+    
+    results_by_vertical = {}
+    
+    while calls_made < calls_limit:
+        # Business hours check
+        if args.business_hours and not args.dry_run:
+            if not is_business_hours():
+                wait = seconds_until_business_hours()
+                print(f"\n⏸  Outside business hours. Pausing {wait//3600:.1f}h until 8am Central...")
+                time.sleep(wait)
+        
+        # Get next call from SmartRouter
+        routing = router.get_next_call(f"campaign-runner-{os.getpid()}")
+        
+        if routing is None:
+            print("\n✓ No more callable accounts (all filtered by time windows or completed)")
+            break
+        
+        account = routing["account"]
+        vertical = routing["vertical"]
+        prompt_file = routing["prompt_file"]
+        voice = routing["voice"]
+        reason = routing["reason"]
+        
+        # Apply state-based routing for local presence + vertical prompt selection
+        account_state = account.get("state", "")
+        from_number = select_from_number(account_state)
+        gsd_prompt = VERTICAL_PROMPTS.get(vertical, VERTICAL_PROMPTS["other"])
+        
+        calls_made += 1
+        
+        print(f"\n{'─'*60}")
+        print(f"[{calls_made}/{args.limit or '∞'}] {account['account_name']}")
+        print(f"  Phone:    {account['phone']}")
+        print(f"  State:    {account['state']} | Vertical: {vertical}")
+        print(f"  From:     {from_number}")
+        print(f"  Prompt:   {gsd_prompt}")
+        print(f"  Reason:   {reason}")
+        
+        # Track by vertical for summary
+        if vertical not in results_by_vertical:
+            results_by_vertical[vertical] = {"attempted": 0, "success": 0, "failed": 0}
+        results_by_vertical[vertical]["attempted"] += 1
+        
+        if args.dry_run:
+            print(f"  [DRY RUN] Would call {account['phone']} via SmartRouter")
+            # Complete the call as no_answer so it doesn't block next run
+            router.complete_call(
+                account["account_id"],
+                outcome="no_answer",
+                notes=f"DRY RUN — vertical={vertical}, prompt={gsd_prompt}",
+                answered=False,
+            )
+            results_by_vertical[vertical]["success"] += 1
+            continue
+        
+        # Research account
+        context = research_account(
+            account["account_name"],
+            account.get("state", ""),
+            vertical,
+            sf_account_id=account.get("sfdc_id", ""),
+        )
+        context_source = context.get("_source", "unknown")
+        print(f"  Research: {context_source} | Hook: {context.get('hook_1', 'N/A')[:60]}")
+        
+        # Build SWML with GSD-routed prompt
+        swml = build_dynamic_swml(
+            context,
+            base_prompt_path=gsd_prompt,
+            voice=voice,
+            webhook_url=WEBHOOK_URL,
+        )
+        
+        # Place call with GSD-routed from_number
+        print(f"  Calling {account['phone']}...")
+        result = make_call(account["phone"], swml, from_number=from_number)
+        
+        if result["success"]:
+            print(f"  ✅ Call initiated: {result['call_id']}")
+            # Note: actual outcome comes from webhook; mark as voicemail for now
+            router.complete_call(
+                account["account_id"],
+                outcome="voicemail",  # conservative default
+                notes=f"call_id={result['call_id']} | vertical={vertical} | prompt={gsd_prompt}",
+                answered=False,
+            )
+            results_by_vertical[vertical]["success"] += 1
+            consecutive_failures = 0
+        else:
+            print(f"  ❌ Call failed: {result.get('error', 'unknown')[:100]}")
+            router.complete_call(
+                account["account_id"],
+                outcome="no_answer",
+                notes=f"API error: {result.get('error', 'unknown')[:200]}",
+                answered=False,
+            )
+            results_by_vertical[vertical]["failed"] += 1
+            consecutive_failures += 1
+        
+        # Log
+        log_call_attempt(
+            {"phone": account["phone"], "account": account["account_name"]},
+            result,
+            context_source,
+        )
+        
+        # Circuit breaker
+        if consecutive_failures >= 3:
+            print(f"\n🛑 {consecutive_failures} consecutive failures. Pausing 5 min...")
+            time.sleep(300)
+            consecutive_failures = 0
+        
+        # Pacing
+        if calls_made < calls_limit:
+            jitter = args.interval * 0.2
+            wait = args.interval + random.uniform(-jitter, jitter)
+            print(f"  Waiting {wait:.0f}s before next call...")
+            time.sleep(wait)
+    
+    # Summary
+    print(f"\n{'='*60}")
+    print("SMART ROUTER CAMPAIGN SUMMARY")
+    print(f"  Total calls: {calls_made}")
+    print(f"\n  Results by vertical:")
+    for vert, counts in results_by_vertical.items():
+        print(f"    {vert:12}: {counts['attempted']} attempted, {counts['success']} success, {counts['failed']} failed")
+    print(f"\n  Call log: {LOG_DIR / 'campaign_log.jsonl'}")
+    print(f"{'='*60}")
+    
+    return results_by_vertical
+
+
 # ─── CLI ─────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Research-powered campaign caller for Fortinet SLED")
-    parser.add_argument("csv_file", help="Path to leads CSV")
+    parser.add_argument("csv_file", nargs="?", default=None, help="Path to leads CSV (legacy mode)")
+    parser.add_argument("--db", default=None, 
+                        help="Path to accounts.db (SmartRouter mode - recommended)")
     parser.add_argument("--dry-run", action="store_true", help="Research only, no calls")
     parser.add_argument("--limit", type=int, default=None, help="Max calls to make")
     parser.add_argument("--interval", type=int, default=240, help="Seconds between calls (default: 240 = 4 min)")
-    parser.add_argument("--resume", action="store_true", help="Resume from last position")
+    parser.add_argument("--resume", action="store_true", help="Resume from last position (CSV mode only)")
     parser.add_argument("--business-hours", action="store_true", help="Only call 8am-4pm Central")
-    parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Prompt file path (default: prompts/paul.txt)")
+    parser.add_argument("--bypass-time-windows", action="store_true", 
+                        help="Ignore SmartRouter time-of-day rules (for testing)")
+    parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Prompt file path (CSV mode; SmartRouter uses GSD rules)")
     parser.add_argument("--voice", default=DEFAULT_VOICE, help="TTS voice (default: openai.onyx)")
     parser.add_argument("--from", dest="from_number", default=None,
-                        help="Outbound caller ID (default: phone_number in config/signalwire.json)")
+                        help="Outbound caller ID (CSV mode; SmartRouter uses GSD rules)")
 
     args = parser.parse_args()
 
-    if not Path(args.csv_file).exists():
-        print(f"Error: {args.csv_file} not found")
+    # SmartRouter mode (preferred)
+    if args.db:
+        if not Path(args.db).exists():
+            print(f"Error: {args.db} not found")
+            sys.exit(1)
+        run_campaign_db(args)
+    # Legacy CSV mode
+    elif args.csv_file:
+        if not Path(args.csv_file).exists():
+            print(f"Error: {args.csv_file} not found")
+            sys.exit(1)
+        run_campaign(args.csv_file, args)
+    else:
+        print("Error: Must provide either --db (SmartRouter mode) or csv_file (legacy mode)")
+        parser.print_help()
         sys.exit(1)
-
-    run_campaign(args.csv_file, args)

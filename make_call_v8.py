@@ -102,13 +102,48 @@ def build_swml(prompt_text, voice, static_greeting=None):
                             "wait_for_user": False,
                             "speak_when_spoken_to": False,
                             "static_greeting": static_greeting or DEFAULT_GREETING,
-                            # attention_timeout (not outbound_attention_timeout — invalid param)
-                            "attention_timeout": 30000,
-                            "inactivity_timeout": 30000,
+                            # FIX 2026-03-09: Reduced from 30s → 10s.
+                            # 30s caused AI to loop on open voicemail lines for 68+ minutes.
+                            "attention_timeout": 10000,
+                            "inactivity_timeout": 10000,
                             "end_of_speech_timeout": 2000,
                             # asr_engine format: "provider:model" — colon-separated string
                             # NOT a nested engine.asr object (that was causing silent AI failure)
                             "asr_engine": "deepgram:nova-3"
+                        },
+                        # FIX 2026-03-09: SWAIG end_call function.
+                        # Prompts tell the AI to "hang up immediately after voicemail" but
+                        # without this function the AI has NO mechanism to actually hang up.
+                        # This was the root cause of 68-minute/$47 runaway calls.
+                        "SWAIG": {
+                            "functions": [
+                                {
+                                    "function": "end_call",
+                                    "purpose": "Hang up the call immediately. MUST be called after leaving a voicemail message. Also call if no one answers after greeting, or call is clearly done.",
+                                    "argument": {
+                                        "type": "object",
+                                        "properties": {
+                                            "reason": {
+                                                "type": "string",
+                                                "description": "Why the call is ending: voicemail_left, no_answer, not_interested, meeting_booked, wrong_number"
+                                            }
+                                        },
+                                        "required": ["reason"]
+                                    },
+                                    "data_map": {
+                                        "expressions": [
+                                            {
+                                                "string": "%{args.reason}",
+                                                "pattern": ".*",
+                                                "output": {
+                                                    "response": "Call ended.",
+                                                    "action": [{"SWML": {"version": "1.0.0", "sections": {"main": [{"hangup": {}}]}}}]
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -156,7 +191,14 @@ def make_call(to_number, from_number, voice, prompt_path, static_greeting=None):
         "params": {
             "from": from_number,
             "to": to_number,
-            "max_duration": 90,  # Hard cap: 90 seconds. Prevents runaway calls.
+            "max_duration": 90,       # Hard cap: 90 seconds. Prevents runaway calls.
+            # FIX 2026-03-09: AMD — detect voicemail vs. live human.
+            # "DetectMessageEnd" waits for the beep, then lets the AI deliver voicemail script.
+            # Without this, the AI had no idea it was talking to a voicemail system.
+            "machine_detection": "DetectMessageEnd",
+            "machine_detection_timeout": 30,
+            "machine_detection_speech_end_threshold": 1200,
+            "machine_detection_silence_timeout": 3000,
             "swml": swml
         }
     }

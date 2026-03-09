@@ -308,8 +308,17 @@ def cmd_send():
         print("No queued emails.")
         return
 
+    # SAFETY 2026-03-09: Require explicit confirmation before sending real emails.
+    # AI agents queued these during calls — Samson must approve before they go out.
+    print(f"\n⚠️  APPROVAL REQUIRED: {len(emails)} email(s) queued to real contacts.")
+    for em in emails:
+        print(f"   → {em.get('email', em.get('to_email', 'unknown'))} ({em.get('info_type', '?')})")
+    confirm = input("\nType 'YES SEND' to send, anything else to abort: ").strip()
+    if confirm != "YES SEND":
+        print("Aborted. No emails sent.")
+        return
+
     gmail_user, gmail_password = get_smtp_creds()
-    use_smtp = bool(gmail_user and gmail_password)
 
     if use_smtp:
         print(f"Sending via Gmail SMTP ({gmail_user})")
