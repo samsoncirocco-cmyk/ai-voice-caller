@@ -145,13 +145,14 @@ class TestSOQLBuilders(unittest.TestCase):
 
     def test_accounts_soql_contains_last_n_hours(self):
         soql = _accounts_soql(24, ["IA", "NE"])
-        self.assertIn("LAST_N_HOURS:24", soql)
+        # Now uses ISO datetime format for REST API compatibility
+        self.assertIn("LastModifiedDate >=", soql)
         self.assertIn("'IA'", soql)
         self.assertIn("'NE'", soql)
 
     def test_accounts_soql_zero_hours_no_filter(self):
         soql = _accounts_soql(0, ["IA"])
-        self.assertNotIn("LAST_N_HOURS", soql)
+        self.assertNotIn("LastModifiedDate >=", soql)
 
     def test_accounts_soql_single_state(self):
         soql = _accounts_soql(24, ["SD"])
@@ -160,7 +161,8 @@ class TestSOQLBuilders(unittest.TestCase):
 
     def test_opps_soql_contains_last_n_hours(self):
         soql = _opportunities_soql(24, ["NE"])
-        self.assertIn("LAST_N_HOURS:24", soql)
+        # Now uses ISO datetime format for REST API compatibility
+        self.assertIn("LastModifiedDate >=", soql)
         # Note: opps SOQL uses OwnerId filter (not BillingState) because
         # cross-object WHERE on Account.BillingState is not supported via REST API
         self.assertIn("OwnerId", soql)
@@ -173,7 +175,8 @@ class TestSOQLBuilders(unittest.TestCase):
 
     def test_opps_soql_48h(self):
         soql = _opportunities_soql(48, ["SD"])
-        self.assertIn("LAST_N_HOURS:48", soql)
+        # Uses ISO datetime format for REST API compatibility
+        self.assertIn("LastModifiedDate >=", soql)
 
 
 # ── phone normalisation tests ─────────────────────────────────────────────────

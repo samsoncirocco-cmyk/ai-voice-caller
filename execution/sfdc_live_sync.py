@@ -209,9 +209,9 @@ def _hours_to_iso(hours: int) -> str:
 
 def _accounts_soql(hours: int, states: List[str]) -> str:
     state_list = ", ".join(f"'{s}'" for s in states)
-    # Use LAST_N_HOURS SOQL function — cleaner and avoids timezone edge cases
+    # Use ISO datetime — LAST_N_HOURS is not supported in REST API queries
     time_filter = (
-        f"AND LastModifiedDate >= LAST_N_HOURS:{hours} " if hours > 0 else ""
+        f"AND LastModifiedDate >= {_hours_to_iso(hours)} " if hours > 0 else ""
     )
     return (
         "SELECT Id, Name, Phone, BillingState, Type, Industry "
@@ -230,9 +230,9 @@ SAMSON_USER_ID = "005Hr00000INgbqIAD"  # scirocco@fortinet.com
 def _opportunities_soql(hours: int, states: List[str]) -> str:
     # Cross-object WHERE (Account.BillingState) not supported in REST API.
     # Filter by OwnerId (Samson's territory) + stage to keep scope tight.
-    # Use LAST_N_HOURS SOQL function — cleaner and avoids timezone edge cases
+    # Use ISO datetime — LAST_N_HOURS is not supported in REST API queries
     time_filter = (
-        f"AND LastModifiedDate >= LAST_N_HOURS:{hours} " if hours > 0 else ""
+        f"AND LastModifiedDate >= {_hours_to_iso(hours)} " if hours > 0 else ""
     )
     return (
         "SELECT Id, Name, AccountId, Account.Name, Account.BillingState, "
