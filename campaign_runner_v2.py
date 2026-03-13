@@ -470,6 +470,19 @@ def run_campaign_db(args):
     if SmartRouter is None:
         print("Error: SmartRouter not available. Install execution/smart_router.py")
         sys.exit(1)
+
+    # Pre-campaign safety check — verify webhook server is reachable before dialing anyone
+    if not args.dry_run:
+        import subprocess as _sp
+        _check = _sp.run(
+            ["python3", str(BASE_DIR / "execution" / "pre_campaign_check.py")],
+            capture_output=True, text=True
+        )
+        print(_check.stdout.strip())
+        if _check.returncode != 0:
+            print("❌ ABORT: hooks-server is unreachable. Post-call summaries would not be captured.")
+            print("   Fix: pm2 restart hooks-server, then retry.")
+            sys.exit(1)
     
     router = SmartRouter(
         db_path=args.db,
