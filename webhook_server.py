@@ -33,6 +33,7 @@ app = Flask(__name__)
 
 LOG_DIR  = os.path.join(os.path.dirname(__file__), "logs")
 LOG_FILE = os.path.join(LOG_DIR, "call_summaries.jsonl")
+TRANSCRIPTS_DIR = os.path.join(LOG_DIR, "call_transcripts")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 
@@ -67,6 +68,13 @@ def post_call_summary():
     data = request.json or {}
 
     call_id = data.get("call_id", "unknown")
+    conversation_history = data.get("conversation_history")
+    if isinstance(conversation_history, list) and call_id and call_id != "unknown":
+        os.makedirs(TRANSCRIPTS_DIR, exist_ok=True)
+        transcript_file = os.path.join(TRANSCRIPTS_DIR, f"{call_id}.json")
+        with open(transcript_file, "w") as tf:
+            json.dump(conversation_history, tf, indent=2)
+
     # SignalWire sends post_prompt_data.raw (not post_prompt_result)
     post_prompt_data = data.get("post_prompt_data", {})
     summary = (
@@ -216,12 +224,33 @@ def _parse_summary(summary: str, from_number: str) -> dict:
     s = summary or ""
     sl = s.lower()
 
-    # Outcome detection
-    if any(x in sl for x in ["meeting booked", "demo booked", "scheduled a meeting", "agreed to meet"]):
+    # Outcome detection — read "- Call outcome: <value>" directly from structured summary.
+    # Fallback to keyword matching for legacy/unstructured entries.
+    import re as _re2
+    outcome_match = _re2.search(r"call outcome[:\s]+([^\n]+)", sl)
+    if outcome_match:
+        raw = outcome_match.group(1).strip().rstrip(".,;")
+        # Normalize to canonical values
+        if any(x in raw for x in ["meeting booked", "demo booked", "meeting scheduled"]):
+            outcome = "Meeting Booked"
+        elif any(x in raw for x in ["left voicemail", "voicemail"]):
+            outcome = "Voicemail"
+        elif any(x in raw for x in ["no answer", "not available", "rang out"]):
+            outcome = "No Answer"
+        elif any(x in raw for x in ["not interested", "do not call", "removed"]):
+            outcome = "Not Interested"
+        elif "wrong number" in raw:
+            outcome = "Wrong Number"
+        elif "connected" in raw:
+            outcome = "Connected"
+        else:
+            outcome = raw.title()  # preserve whatever the AI said
+    # Legacy keyword fallback for old unstructured entries
+    elif any(x in sl for x in ["meeting booked: yes", "demo booked", "scheduled a meeting", "agreed to meet"]):
         outcome = "Meeting Booked"
     elif any(x in sl for x in ["voicemail", "left a message", "left message"]):
         outcome = "Voicemail"
-    elif any(x in sl for x in ["no answer", "didn't answer", "did not answer", "rang out", "not available"]):
+    elif any(x in sl for x in ["no answer", "didn't answer", "did not answer", "rang out"]):
         outcome = "No Answer"
     elif any(x in sl for x in ["not interested", "do not call", "remove from", "hang up", "hung up"]):
         outcome = "Not Interested"

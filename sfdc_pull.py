@@ -131,11 +131,25 @@ def _normalize_phone_e164(raw: Optional[str]) -> Optional[str]:
 
 
 def _normalize_phone_digits(raw: Optional[str]) -> str:
-    """Return bare 10-digit string for DB storage (strips leading 1)."""
+    """Return bare 10-digit string for DB storage (strips leading 1). Returns '' if invalid."""
     digits = re.sub(r"\D+", "", raw or "")
     if len(digits) == 11 and digits.startswith("1"):
         digits = digits[1:]
+    if len(digits) != 10:
+        return ""   # reject malformed numbers (too short, too long, garbage data)
     return digits
+
+
+def _map_vertical(industry: str) -> str:
+    """Map SFDC Industry field → campaign vertical (k12 / government / higher_ed / other)."""
+    s = (industry or "").lower()
+    if any(x in s for x in ["lower education", "k-12", "k12", "elementary", "high school", "school district"]):
+        return "k12"
+    if any(x in s for x in ["higher education", "university", "college"]):
+        return "higher_ed"
+    if any(x in s for x in ["government", "municipal", "county", "tribal", "public safety", "utilities"]):
+        return "government"
+    return "other"
 
 
 def _state_variants(states: List[str]) -> List[str]:
@@ -471,7 +485,7 @@ def run_sync(states: List[str], db_path: Optional[str] = None, dry_run: bool = F
             phone = _normalize_phone_digits(rec.get("Phone"))
             name = rec.get("Name") or ""
             state = _normalize_state(rec.get("BillingState"))
-            vertical = rec.get("Industry") or rec.get("Type") or ""
+            vertical = _map_vertical(rec.get("Industry") or rec.get("Type") or "")
             sfdc_id = rec.get("Id") or ""
 
             result = _upsert_account(
@@ -480,7 +494,7 @@ def run_sync(states: List[str], db_path: Optional[str] = None, dry_run: bool = F
                     "account_name": name,
                     "phone": phone,
                     "state": state,
-                    "vertical": vertical,
+                    "vertical": _map_vertical(vertical),
                     "sfdc_id": sfdc_id,
                 },
             )

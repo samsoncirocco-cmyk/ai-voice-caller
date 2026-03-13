@@ -61,6 +61,11 @@ try:
 except ImportError:
     SmartRouter = None  # Fallback: use legacy CSV mode
 
+try:
+    import cost_tracker
+except ImportError:
+    cost_tracker = None
+
 DEFAULT_PROMPT = "prompts/paul.txt"
 DEFAULT_VOICE = "openai.onyx"
 
@@ -75,8 +80,8 @@ DEFAULT_FROM_NUMBER = "+16028985026"  # 602 - fallback for non-territory states
 
 # Vertical → prompt_file mapping (from_number determined by state, not vertical)
 VERTICAL_PROMPTS = {
-    "k12":        "prompts/paul.txt",
-    "government": "prompts/paul.txt",
+    "k12":        "prompts/k12.txt",        # K-12 specialized — E-Rate, lean IT, district language
+    "government": "prompts/paul.txt",        # Municipal/county/gov
     "higher_ed":  "prompts/cold_outreach.txt",
     "other":      "prompts/cold_outreach.txt",
 }
@@ -195,6 +200,13 @@ def get_cached_research(account_name):
     safe_name = re.sub(r"[^\w\-]", "_", account_name)[:80]
     cache_file = RESEARCH_CACHE_DIR / f"{safe_name}.json"
     if cache_file.exists():
+        if os.path.getmtime(cache_file) < time.time() - (30 * 86400):
+            try:
+                cache_file.unlink()
+                print(f"  [cache] Removed stale cache file: {cache_file.name}")
+            except OSError:
+                pass
+            return None
         with open(cache_file) as f:
             cached = json.load(f)
         # Cache valid for 7 days
@@ -300,6 +312,21 @@ def log_call_attempt(lead, result, context_source):
         f.write(json.dumps(entry) + "\n")
 
 
+def append_pending_summary_stub(call_id, phone, account):
+    """Write a minimal pending record so every initiated call has a summary entry."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    summaries_file = LOG_DIR / "call_summaries.jsonl"
+    stub = {
+        "call_id": call_id,
+        "phone": phone,
+        "account": account,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": "pending",
+    }
+    with open(summaries_file, "a") as f:
+        f.write(json.dumps(stub) + "\n")
+
+
 # ─── Main Campaign Runner ───────────────────────────────────────
 
 def run_campaign(csv_path, args):
@@ -370,10 +397,19 @@ def run_campaign(csv_path, args):
 
         # Step 3: Place call
         print(f"  Calling {lead['phone']}...")
+        balance_before = None
+        if cost_tracker:
+            try:
+                balance_before = cost_tracker.get_balance(CONFIG)
+            except Exception as exc:
+                print(f"  [warn] Could not fetch pre-call balance: {exc}")
         result = make_call(lead["phone"], swml, from_number=args.from_number)
 
+        call_id_for_cost = None
         if result["success"]:
             print(f"  ✅ Call initiated: {result['call_id']}")
+            append_pending_summary_stub(result["call_id"], lead["phone"], lead["account"])
+            call_id_for_cost = result["call_id"]
             state["completed"].append(lead["phone"])
             consecutive_failures = 0
         else:
@@ -400,6 +436,13 @@ def run_campaign(csv_path, args):
             wait = args.interval + random.uniform(-jitter, jitter)
             print(f"  Waiting {wait:.0f}s before next call...")
             time.sleep(wait)
+
+        if cost_tracker and call_id_for_cost and balance_before is not None:
+            try:
+                balance_after = cost_tracker.get_balance(CONFIG)
+                cost_tracker.log_call_cost(call_id_for_cost, balance_before, balance_after)
+            except Exception as exc:
+                print(f"  [warn] Could not log call cost for {call_id_for_cost}: {exc}")
 
     # Summary
     print(f"\n{'='*60}")
@@ -535,10 +578,19 @@ def run_campaign_db(args):
         
         # Place call with GSD-routed from_number
         print(f"  Calling {account['phone']}...")
+        balance_before = None
+        if cost_tracker:
+            try:
+                balance_before = cost_tracker.get_balance(CONFIG)
+            except Exception as exc:
+                print(f"  [warn] Could not fetch pre-call balance: {exc}")
         result = make_call(account["phone"], swml, from_number=from_number)
-        
+
+        call_id_for_cost = None
         if result["success"]:
             print(f"  ✅ Call initiated: {result['call_id']}")
+            append_pending_summary_stub(result["call_id"], account["phone"], account["account_name"])
+            call_id_for_cost = result["call_id"]
             # Note: actual outcome comes from webhook; mark as voicemail for now
             router.complete_call(
                 account["account_id"],
@@ -578,6 +630,13 @@ def run_campaign_db(args):
             wait = args.interval + random.uniform(-jitter, jitter)
             print(f"  Waiting {wait:.0f}s before next call...")
             time.sleep(wait)
+
+        if cost_tracker and call_id_for_cost and balance_before is not None:
+            try:
+                balance_after = cost_tracker.get_balance(CONFIG)
+                cost_tracker.log_call_cost(call_id_for_cost, balance_before, balance_after)
+            except Exception as exc:
+                print(f"  [warn] Could not log call cost for {call_id_for_cost}: {exc}")
     
     # Summary
     print(f"\n{'='*60}")
