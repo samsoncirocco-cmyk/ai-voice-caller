@@ -1,231 +1,116 @@
 # Process Completeness Report — AI Voice Caller
-**Date:** 2026-03-13
-**Agent:** audit-agent-4-process
-**Scope:** Root + execution/ Python scripts not obviously running
+*Audit Date: 2026-03-13 | Agent: audit-agent-4-process*
 
 ---
 
-## Executive Summary
+## 1. Script Inventory
 
-Of the 7 scripts audited, **1 is fully wired**, **1 doesn't exist**, **4 are orphaned but functional**, and **1 has a missing dependency**. The biggest gap is that post-call email sending (`send_emails.py`) has zero automation — emails queued during live calls are never actually sent. Two analytics scripts (`k12_campaign_monitor.py`, `post_campaign_results.py`) also produce zero output unless run manually.
+| Script | What It Does | Status | Recommended Action |
+|---|---|---|---|
+| `webhook_server.py` | Flask server on port 18790 (hooks.6eyes.dev). Receives SignalWire post-call callbacks, SFDC live-sync events, Outlook sync. Logs call_summaries.jsonl. | ✅ **WIRED** (PM2: hooks-server) | None — correctly managed by PM2 |
+| `execution/orchestrator.py` | Multi-agent call orchestrator. Spins up N agents (max 4), routes via SmartRouter, places calls via make_call_v8, waits for webhooks. Business hours enforcement. Smart vertical routing. | ✅ **WIRED** (manually triggered) | Correct — should remain manual per CARDINAL RULES |
+| `campaign_runner_v2.py` | Batch caller. Research → SWML → SignalWire → webhook wait. Handles resume, dry-run, business hours. Used by run_k12_campaign.py. | ✅ **WIRED** (called by run_k12_campaign.py) | None — correct as-is |
+| `run_k12_campaign.py` | Dedicated K-12 campaign runner. Filters accounts.db for Education:Lower-Education verticals in IA/NE/SD, exports CSV, drives campaign_runner_v2.py with k12.txt prompt. Posts Slack summary. | ✅ **WIRED** (manually triggered) | None — should remain manual |
+| `research_agent.py` | Pre-call research via OpenRouter → Perplexity Sonar (or OpenAI fallback). Generates personalized context, opening hooks, objection handlers, contact discovery. Module imported by campaign_runner_v2. | ✅ **WIRED** (imported as module) | Consider adding OPENROUTER_API_KEY health check to pre-campaign check |
+| `execution/send_emails.py` | Reads Firestore `email-queue` collection. Renders email templates (case study, overview, pricing inquiry), sends via SMTP. Supports --list/--dry-run/--send. | ⚠️ **ORPHANED** (no cron, never scheduled) | **ADD CRON**: Every 30 min during business hours |
+| `k12_campaign_monitor.py` | Polls campaign_log.jsonl + call_summaries.jsonl until target call count is reached. Posts results to Slack #call-blitz. Creates SFDC Tasks for "Meeting Booked" outcomes. Hardcoded target=20 calls, max wait=120 min. | ⚠️ **ORPHANED** (manually started after campaigns, often forgotten) | Add to run_k12_campaign.py as subprocess, or add nightly reconciliation cron |
+| `post_campaign_results.py` | Analyzes today's campaign results from campaign_log.jsonl + call_summaries.jsonl. Posts formatted stats to Slack #call-blitz. Dry-run capable. | ⚠️ **ORPHANED** (no cron, no caller) | **ADD CRON**: Nightly 6pm MST on campaign days |
+| `call_monitor.py` | Checks SignalWire health by analyzing recent calls. Detects BLOCKED / DEGRADED / CARRIER_ISSUES / HEALTHY state. Supports --watch (5min polling) and --probe (test call). | ⚠️ **ORPHANED** (no cron, run ad hoc) | **ADD CRON**: Every 15 min, alert if BLOCKED or DEGRADED |
+| **`process_callbacks.py`** | **SOURCE FILE DOES NOT EXIST.** Only a compiled .pyc exists at `execution/__pycache__/process_callbacks.cpython-312.pyc`, indicating the source was present in git history (commit `ae7c974`) then stripped. This was the SignalWire callback processor. | ❌ **BROKEN / DELETED** | **MUST REBUILD**: Source missing. Pyc confirms it existed and was wired to execution/. Rebuild from pyc or reconstruct from webhook_server.py callback logic. |
+| `execution/sfdc_live_sync.py` | Pulls SFDC Accounts + Opportunities modified in last N hours → upserts to accounts.db → updates caller state machine for Closed Won/Lost. | ✅ **WIRED** (cron: midnight MST daily) | None |
+| `execution/performance_tracker.py` | Tracks call outcomes (answered/voicemail/interested etc.) by prompt, voice, time-of-day, state. Feeds smart_router.py best-variant selection. Slack digest Mondays. | ✅ **WIRED** (cron: Monday 8am MST) | Ensure `backfill` sub-command is run once to catch historical summaries |
+| `execution/smart_router.py` | Routes calls by vertical (K-12/Gov/Higher Ed), time windows, state load-balancing, performance-based prompt selection. Used by orchestrator.py. | ✅ **WIRED** (imported as module) | None |
+| `execution/sync_salesforce.py` | Pushes call_summaries.jsonl to SFDC as completed Tasks. Resolves AccountId from CSV or name lookup. Optional contact creation with confidence gates. | ⚠️ **SEMI-WIRED** (no cron, manual post-campaign) | **ADD CRON**: Daily 7pm MST (after sfdc_live_sync) |
+| `sfdc_pull.py` | Pulls SFDC Accounts → CSV (legacy) or accounts.db sync. Territory filter IA/NE/SD. | ⚠️ **ORPHANED** (replaced by sfdc_live_sync.py for most use cases) | Deprecate or document as "manual bootstrap" tool |
+| `sfdc_push.py` | Pushes call results to SFDC using sfdc_guardrails. Wrapper around sync_salesforce.py pattern. | ⚠️ **ORPHANED** (overlaps sync_salesforce.py) | Consolidate into sync_salesforce.py |
+| `execution/pre_campaign_check.py` | Pre-flight health checks before campaign runs. | ⚠️ **ORPHANED** (not called by run_k12_campaign.py) | Wire into run_k12_campaign.py as first step |
+| `execution/account_db.py` | AccountDB class — SQLite CRUD wrapper for campaigns/accounts.db. Used by orchestrator, smart_router, sfdc_live_sync. | ✅ **WIRED** (imported as module) | None |
+| `execution/referral_processor.py` | Processes referral contacts extracted from AI call summaries. | ⚠️ **ORPHANED** (no caller/cron found) | Review + wire to post_campaign_results.py or add cron |
 
 ---
 
-## Script-by-Script Audit
+## 2. Cron Audit
 
-### 1. `process_callbacks.py` — ❌ MISSING (Does Not Exist)
-| Field | Value |
-|-------|-------|
-| Status | **MISSING** |
-| Location | Not found anywhere in project |
-| Called from | Nowhere |
-| Cron | None |
+### Currently Active Crons (ai-voice-caller related)
 
-**What it should do:** Unknown — name suggests it would process SignalWire/webhook callbacks, possibly as a background processor for call outcome data.
-
-**Recommended action:** CLARIFY what this was supposed to do. If it was meant to process call outcome webhooks, that logic already lives in `webhook_server.py` (specifically the `/call-summary` and `/sfdc-update` handlers). Either document that it was merged into webhook_server, or build it as a standalone offline processor.
-
----
-
-### 2. `execution/send_emails.py` — 🔴 ORPHANED (High Priority)
-| Field | Value |
-|-------|-------|
-| Status | **ORPHANED** |
-| Location | `execution/send_emails.py` |
-| Called from | Nowhere |
-| Cron | None |
-| Imports | ✅ OK (via `venv` python) |
-
-**What it does:** Reads the Firestore `email-queue` collection — populated when the AI agent says "I'll send you that info" during a call — renders templates (case study, overview, pricing, demo request), and sends via SMTP. Has `--list`, `--dry-run`, `--send` modes.
-
-**Why it matters:** Every time Paul/Alex says "I'll email you a case study," that email is queued in Firestore. Without this script running on a schedule, **no emails are ever sent**. This is the biggest operational gap.
-
-**Recommended action:** Add cron job:
-```bash
-*/30 * * * * cd /home/samson/.openclaw/workspace/projects/ai-voice-caller && venv/bin/python3 execution/send_emails.py --send >> logs/send-emails.log 2>&1
 ```
-Or trigger from `webhook_server.py` after each `send_info` outcome.
+# SFDC nightly sync — midnight MST
+0 7 * * * cd .../ai-voice-caller && python3 execution/sfdc_live_sync.py >> logs/sfdc-sync.log
 
----
-
-### 3. `k12_campaign_monitor.py` — 🟡 ORPHANED (Medium Priority)
-| Field | Value |
-|-------|-------|
-| Status | **ORPHANED** |
-| Location | `k12_campaign_monitor.py` (project root) |
-| Called from | Nowhere (should be called by `run_k12_campaign.py`) |
-| Cron | None |
-| Imports | ✅ OK (stdlib + requests only) |
-
-**What it does:** Background monitor that polls `campaigns/.state/k12-accounts.json` every 60s, waits until 20 calls have been processed, then reads `logs/call_summaries.jsonl`, posts a Slack summary to `#call-blitz` (`C0AFQ0FPYGM`), and creates SFDC Tasks for "Meeting Booked" outcomes.
-
-**Why it's orphaned:** `run_k12_campaign.py` does NOT spawn it as a subprocess or background process. It's designed to be started alongside the campaign but there's no wiring.
-
-**Recommended action:** Add to `run_k12_campaign.py` (after line 266 where campaign subprocess is spawned):
-```python
-# Start monitor in background
-monitor_proc = subprocess.Popen([sys.executable, str(ROOT / "k12_campaign_monitor.py")])
-```
-Or run manually: `venv/bin/python3 k12_campaign_monitor.py &`
-
----
-
-### 4. `post_campaign_results.py` — 🟡 ORPHANED (Medium Priority)
-| Field | Value |
-|-------|-------|
-| Status | **ORPHANED** |
-| Location | `post_campaign_results.py` (project root) |
-| Called from | Nowhere |
-| Cron | None |
-| Imports | ✅ OK (stdlib + requests) |
-
-**What it does:** End-of-campaign analytics script. Reads `logs/campaign_log.jsonl` and `logs/call_summaries.jsonl`, computes stats (connection rate, voicemails, meetings booked, hot leads), posts a formatted summary to Slack `#call-blitz`, and creates SFDC Tasks via `sfdc_push.py` subprocess.
-
-**Overlap with k12_campaign_monitor.py:** Both post to #call-blitz and create SFDC tasks. `k12_campaign_monitor` is live/real-time during the run; `post_campaign_results` is a post-mortem analysis. Both should run — monitor during, post-results after.
-
-**Recommended action:** Wire into `run_k12_campaign.py` to run after campaign subprocess completes:
-```python
-subprocess.run([sys.executable, str(ROOT / "post_campaign_results.py")], cwd=str(ROOT))
-```
-Or add EOD cron: `0 20 * * 1-5 cd /project && venv/bin/python3 post_campaign_results.py`
-
----
-
-### 5. `run_k12_campaign.py` — 🟡 ORPHANED (Manual Trigger — OK)
-| Field | Value |
-|-------|-------|
-| Status | **ORPHANED (by design — manual)** |
-| Location | `run_k12_campaign.py` (project root) |
-| Called from | Nowhere automated |
-| Cron | None (correct — has business hours gate) |
-| Imports | ✅ OK (stdlib + requests + sqlite3) |
-
-**What it does:** The dedicated K-12 campaign runner. Queries `campaigns/accounts.db` for `vertical IN ('Education: Lower Education', 'K-12', 'K12')`, exports to `campaigns/k12-accounts.csv`, then spawns `campaign_runner_v2.py` with `prompts/k12.txt`. Posts a Slack summary after. Has `--dry-run`, `--limit`, `--force-hours`, `--status` modes. **Business hours gate enforced via campaign_runner_v2.**
-
-**Assessment:** Intentionally manual — should be triggered by Samson saying "run the K-12 caller." No cron needed (would violate CARDINAL RULE re: no calls without approval). But it should wire up `k12_campaign_monitor.py` and `post_campaign_results.py` automatically.
-
-**Recommended action:** Wire child scripts (monitor + post-results) inside `run_k12_campaign.py` so they auto-fire when Samson kicks off a run. No cron.
-
----
-
-### 6. `call_monitor.py` — 🟡 ORPHANED (Low Priority)
-| Field | Value |
-|-------|-------|
-| Status | **ORPHANED** |
-| Location | `call_monitor.py` (project root) |
-| Called from | Nowhere |
-| Cron | None |
-| Imports | ✅ OK (stdlib + requests) |
-
-**What it does:** SignalWire number health checker. Fetches recent 15 calls from the SignalWire API, classifies them as HEALTHY / DEGRADED / BLOCKED / CARRIER_ISSUES based on failure patterns. Has `--watch` mode (polls every 5 min), `--probe` mode (makes a test call). Uses hardcoded API token.
-
-**Recommended action:** Add as pre-campaign check in `run_k12_campaign.py`:
-```python
-result = subprocess.run([sys.executable, "call_monitor.py"], capture_output=True, text=True, cwd=str(ROOT))
-if "BLOCKED" in result.stdout:
-    print("[ABORT] SignalWire number is blocked — not starting campaign")
-    sys.exit(1)
-```
-OR add a cron for ongoing monitoring:
-```bash
-0 */4 * * * cd /project && venv/bin/python3 call_monitor.py >> logs/call-monitor.log 2>&1
+# Performance digest — Monday 8am MST
+0 15 * * 1 cd .../ai-voice-caller && python3 execution/performance_tracker.py slack-digest >> logs/performance_tracker.log
 ```
 
----
+### 🚨 Missing Crons That Should Exist
 
-### 7. `research_agent.py` — ✅ WIRED
-| Field | Value |
-|-------|-------|
-| Status | **WIRED** |
-| Location | `research_agent.py` (project root) |
-| Called from | `campaign_runner_v2.py` (line 56: `from research_agent import research_account, build_dynamic_swml`) |
-| Cron | N/A (called inline) |
-| Imports | ✅ OK |
-
-**What it does:** Pre-call research engine using OpenRouter → Perplexity Sonar (web-grounded). For each account, generates: summary, contacts with source URLs, two opening hooks, pain points, tech intel, budget cycle, conversation starters. Falls back to OpenAI/xAI grok if OpenRouter unavailable. Used by campaign_runner_v2 to personalize every call.
-
-**No action needed.** Works correctly.
+| Script | Suggested Schedule | Rationale |
+|---|---|---|
+| `execution/send_emails.py` | `*/30 8-17 * * 1-5` | Process email queue every 30 min business hours. Currently emails queued by AI calls are NEVER SENT. |
+| `call_monitor.py` | `*/15 * * * *` | Every 15 min to detect BLOCKED status early. Currently discovered only when campaigns fail. |
+| `post_campaign_results.py` | `0 18 * * 1-5` | Nightly 6pm MST summary. Currently only run manually (often forgotten). |
+| `execution/sync_salesforce.py` | `0 19 * * 1-5` | Daily 7pm push after sfdc_live_sync runs. Currently SFDC tasks are never logged automatically. |
+| **`process_callbacks.py`** | **`*/15 * * * *`** | **SOURCE MISSING — rebuild required first. This was meant to be the 15-min callback processor.** |
 
 ---
 
-## Dependency & Environment Issues
+## 3. Dependency Issues
 
-### Two Venvs — Only One Has Full Dependencies
-| Venv | Python | Key Packages | Used By |
-|------|--------|--------------|---------|
-| `venv/` (Feb 11) | 3.12 | SQLAlchemy, simple-salesforce, signalwire, flask-cors | **PM2 (webhook_server)**, should be used by all scripts |
-| `.venv/` (Feb 17) | 3.12 | Flask, requests, google-cloud-firestore | Missing sqlalchemy, openai, simple-salesforce |
+### Venv Status: `venv/` (active) and `.venv/` (secondary) both present
 
-**Problem:** All scripts use `#!/usr/bin/env python3` — they pick up system Python which may or may not have these packages. The correct venv is `venv/`, confirmed by PM2's interpreter config for hooks-server (`venv/bin/python3`).
+#### ✅ Installed and working
+- `flask`, `fastapi`, `uvicorn` — webhook_server OK
+- `google-cloud-firestore` — send_emails.py OK
+- `signalwire`, `signalwire_agents` — call placement OK
+- `simple-salesforce`, `SQLAlchemy` — SFDC sync OK
+- `requests`, `beautifulsoup4` — research_agent OK
 
-**Fix:** When running scripts manually or via cron, always use `venv/bin/python3`, e.g.:
-```bash
-cd /home/samson/.openclaw/workspace/projects/ai-voice-caller && venv/bin/python3 execution/send_emails.py --send
-```
-
-### Missing: `openai` module in both venvs
-- `venv/`: No openai package installed
-- `.venv/`: No openai package installed
-- `research_agent.py` falls back to OpenAI/xAI API if OpenRouter fails — but it uses raw `requests`, not the openai SDK, so this is OK
-
-### `send_emails.py` requires Firestore credentials
-- Needs `GOOGLE_APPLICATION_CREDENTIALS` or ADC set up
-- `.env` in project root has limited keys; Firestore likely uses ADC from gcloud
-- **Test first:** `venv/bin/python3 execution/send_emails.py --list` to verify Firestore connection
+#### ⚠️ Potential Issues
+| Issue | Detail |
+|---|---|
+| `openai` package not in venv pip list | research_agent.py uses `OPENAI_API_KEY` for fallback. If OPENROUTER fails, the fallback import may fail at runtime. Check: `pip show openai`. |
+| Two venvs (`venv/` + `.venv/`) | Potential drift. Scripts use `venv/` shebang path via activation. Confirm hooks-server PM2 config uses correct venv. |
+| `OPENROUTER_API_KEY` not in .env verification | research_agent.py fails silently (empty string check), which means calls get made with zero research context. No pre-flight validates this. |
+| Cron scripts use `/usr/bin/python3` | System python3 ≠ venv python3. sfdc_live_sync cron should use `venv/bin/python3` or `source venv/bin/activate &&`. |
 
 ---
 
-## Missing Cron Jobs
-
-| Priority | Script | Recommended Schedule | Command |
-|----------|--------|---------------------|---------|
-| 🔴 HIGH | `execution/send_emails.py` | Every 30 min | `*/30 * * * * cd /home/samson/.openclaw/workspace/projects/ai-voice-caller && venv/bin/python3 execution/send_emails.py --send >> logs/send-emails.log 2>&1` |
-| 🟡 MED | `call_monitor.py` | Every 4 hours | `0 */4 * * * cd /home/samson/.openclaw/workspace/projects/ai-voice-caller && venv/bin/python3 call_monitor.py >> logs/call-monitor.log 2>&1` |
-| 🟢 LOW | `post_campaign_results.py` | Weekday EOD 8pm | `0 20 * * 1-5 cd /home/samson/.openclaw/workspace/projects/ai-voice-caller && venv/bin/python3 post_campaign_results.py >> logs/post-campaign.log 2>&1` |
-
-**Note:** `k12_campaign_monitor.py` should NOT be in cron — it should be spawned programmatically from `run_k12_campaign.py`.
-
----
-
-## PM2 Assessment
+## 4. PM2 Audit
 
 | Process | Status | Notes |
-|---------|--------|-------|
-| `hooks-server` (webhook_server.py) | ✅ Running | Uses `venv/bin/python3`, correct |
-| `brain-sync-daemon` | ✅ Running | Unrelated to voice caller |
-| `second-brain` | ✅ Running (103 restarts 😬) | Unrelated to voice caller |
-| `campaign_runner_v2.py` | Not in PM2 | **Correct** — runs in tmux via `start_campaign.sh` or `run_k12_campaign.py` |
+|---|---|---|
+| `hooks-server` (webhook_server.py) | ✅ Online | Correct — webhook server should always be PM2-managed |
+| `brain-sync-daemon` | ✅ Online | Unrelated to voice caller |
+| `second-brain` | ✅ Online | Unrelated to voice caller |
 
-**Assessment:** PM2 setup is correct. campaign_runner is a one-shot batch job, not a daemon — tmux is the right approach. No changes needed to PM2.
-
----
-
-## Priority Order: What to Wire Up Next
-
-1. **🔴 `send_emails.py` cron** — Emails queued by AI during calls are currently never sent. Add `*/30 * * * *` cron immediately. Test with `--list` first to see backlog.
-
-2. **🟡 Wire `k12_campaign_monitor.py` into `run_k12_campaign.py`** — Monitor should auto-start as background subprocess when a K-12 campaign fires. One-line change to run_k12_campaign.py.
-
-3. **🟡 Wire `post_campaign_results.py` into `run_k12_campaign.py`** — Should run automatically after campaign subprocess completes. One-line addition.
-
-4. **🟡 `call_monitor.py` as pre-campaign gate** — Add to run_k12_campaign.py to abort if number is BLOCKED. Prevents burning accounts on a dead number.
-
-5. **🟢 `call_monitor.py` cron** — Every 4h background health check. Nice to have, not urgent.
-
-6. **❓ `process_callbacks.py`** — Clarify with Samson: was this planned, merged into webhook_server.py, or obsolete? If needed, build it.
+**Q: Should `campaign_runner` or `orchestrator` ever be PM2-managed?**
+**A: No.** Per CARDINAL RULES, calls may only fire when Samson explicitly starts them. PM2 would auto-restart crashed campaigns, potentially re-dialing contacts without authorization. Always run manually.
 
 ---
 
-## Currently Wired (for reference)
+## 5. Priority Order — What to Wire Up First
 
-| Script | Trigger | Schedule |
-|--------|---------|----------|
-| `execution/sfdc_live_sync.py` | cron | Midnight MST daily |
-| `execution/performance_tracker.py` | cron | Monday 8am MST |
-| `webhook_server.py` | PM2 | Always-on daemon |
-| `research_agent.py` | campaign_runner_v2.py | Per-call, inline import |
-| `campaign_runner_v2.py` | tmux / run_k12_campaign.py | Manual / per campaign |
+| Priority | Action | Why |
+|---|---|---|
+| 🔴 **P0** | **Rebuild `process_callbacks.py`** | Source deleted. .pyc proves it existed. This is the callback processor and was meant to have a 15-min cron. Without it, in-flight callbacks may be unprocessed. |
+| 🔴 **P0** | **Add cron for `send_emails.py`** | Emails offered during calls are queued in Firestore but NEVER SENT. Real contacts were promised follow-ups that never arrived. |
+| 🟠 **P1** | **Add cron for `call_monitor.py`** | SignalWire blocking goes undetected until next manual campaign run. A 15-min health check would auto-alert on Slack. |
+| 🟠 **P1** | **Add cron for `execution/sync_salesforce.py`** | Call activities not being written to SFDC daily = pipeline data is stale. sfdc_live_sync brings SFDC→local but sync_salesforce.py does local→SFDC (Tasks). |
+| 🟡 **P2** | **Wire `pre_campaign_check.py` into `run_k12_campaign.py`** | Pre-flight isn't called before campaigns start. Saves failed runs. |
+| 🟡 **P2** | **Add nightly cron for `post_campaign_results.py`** | Results are never automatically summarized. Samson has to remember to run it. |
+| 🟢 **P3** | **Consolidate `sfdc_push.py` + `sfdc_pull.py`** | Overlapping functionality with sfdc_live_sync.py + sync_salesforce.py. Deprecate legacy scripts. |
+| 🟢 **P3** | **Add `openai` package to venv** | Ensure research_agent.py fallback works if OpenRouter is down. |
+| 🟢 **P3** | **Fix cron python path** | sfdc_live_sync cron uses `/usr/bin/python3` not `venv/bin/python3`. May miss venv packages. |
 
 ---
 
-*Report generated: 2026-03-13 by audit-agent-4-process*
+## 6. process_callbacks.py Investigation
+
+- **Source file**: MISSING from all directories
+- **Evidence of past existence**: `execution/__pycache__/process_callbacks.cpython-312.pyc` exists
+- **Git history**: Script was present at initial commit `ae7c974` and stripped in `24b5f4c ("chore: strip old iterations, keep production scripts only")`
+- **Test command result**: `[NOT FOUND] process_callbacks.py does not exist in root`
+- **Conclusion**: The script was intentionally removed during a cleanup but the .pyc was left behind. The functionality it provided (processing SignalWire callbacks) is now partially handled by `webhook_server.py`'s `/voice-caller/post-call` endpoint. The question is whether the batch-processing version (processing queued callbacks offline) was a separate function that got lost.
+
+---
+
+*Report generated by audit-agent-4-process | 2026-03-13*
