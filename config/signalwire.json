@@ -93,24 +93,46 @@
   "local_numbers": {
     "SD_605": {
       "number": "+16053035984",
-      "sid": "9ae04c04-a271-44c1-8777-8b5aecXXX",
+      "sid": "9ae04c04-a271-44c1-8777-8b5aec05854e",
       "state": "SD",
       "area_code": "605",
-      "purpose": "South Dakota local presence \u2014 K-12 + municipal"
+      "purpose": "South Dakota local presence — K-12 + municipal",
+      "inbound_url": "https://hooks.6eyes.dev/voice-caller/inbound",
+      "inbound_configured": "2026-03-14"
     },
     "NE_402": {
       "number": "+14022755273",
-      "sid": "57ab5184-9e61-4388-b335-db1cd5XXX",
+      "sid": "57ab5184-9e61-4388-b335-db1cd5e583bf",
       "state": "NE",
       "area_code": "402",
-      "purpose": "Nebraska local presence \u2014 K-12 + municipal"
+      "purpose": "Nebraska local presence — K-12 + municipal",
+      "inbound_url": "https://hooks.6eyes.dev/voice-caller/inbound",
+      "inbound_configured": "2026-03-14"
     },
     "IA_515": {
       "number": "+15152987809",
-      "sid": "51ca5c0c-ed02-426c-ad2c-ee7617XXX",
+      "sid": "51ca5c0c-ed02-426c-ad2c-ee76173f45e0",
       "state": "IA",
       "area_code": "515",
-      "purpose": "Iowa local presence \u2014 K-12 + municipal"
+      "purpose": "Iowa local presence — K-12 + municipal",
+      "inbound_url": "https://hooks.6eyes.dev/voice-caller/inbound",
+      "inbound_configured": "2026-03-14"
+    }
+  },
+  "az_numbers": {
+    "AZ_602": {
+      "number": "+16028985026",
+      "sid": "64c2447d-8ed2-4b9d-be7a-05cc7291e917",
+      "label": "Original AZ 602",
+      "inbound_url": "https://hooks.6eyes.dev/voice-caller/inbound",
+      "inbound_configured": "2026-03-14"
+    },
+    "AZ_480_alex": {
+      "number": "+14806024668",
+      "sid": "0156ae8e-1d60-4d22-acdb-4f675215eda8",
+      "label": "Alex Lane (480-02)",
+      "inbound_url": "https://hooks.6eyes.dev/voice-caller/inbound",
+      "inbound_configured": "2026-03-14"
     }
   }
 }

@@ -78,10 +78,11 @@ def get_number_config(phone_sid: str):
     return resp.json()
 
 
-def update_number(phone_sid: str, voice_url: str, dry_run: bool = False):
+def update_number(phone_sid: str, voice_url: str, label: str = "", dry_run: bool = False):
     """Update a phone number's voice URL for inbound handling."""
     url = f"https://{SPACE_URL}/api/relay/rest/phone_numbers/{phone_sid}"
     payload = {
+        "name": label or phone_sid,   # SignalWire requires name for some numbers
         "call_handler": "laml_webhooks",
         "call_receive_mode": "voice",
         "call_request_url": voice_url,
@@ -157,7 +158,7 @@ def main():
                 continue
 
             print(f"\n📞 {phone} ({info['label']})")
-            update_number(sid, INBOUND_URL, dry_run=args.dry_run)
+            update_number(sid, INBOUND_URL, label=info["label"], dry_run=args.dry_run)
 
     if not args.apply and not args.dry_run and not args.status:
         print("\nUse --status to check, --dry-run to preview, or --apply to configure.")
