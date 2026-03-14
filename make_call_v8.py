@@ -69,7 +69,18 @@ DEFAULT_GREETING = (
 )
 
 
-def build_swml(prompt_text, voice, static_greeting=None):
+def build_swml(prompt_text, voice, static_greeting=None, sfdc_id="", account_name=""):
+    # FIX 2026-03-13: Embed sfdc_id as URL query param in post_prompt_url.
+    # SignalWire does NOT echo global_data in post_prompt_url callbacks,
+    # so URL params are the only guaranteed delivery mechanism for sfdc_id.
+    import urllib.parse
+    _base_url = "https://hooks.6eyes.dev/voice-caller/post-call"
+    if sfdc_id or account_name:
+        _qp = urllib.parse.urlencode({"sfdc_id": sfdc_id, "account_name": account_name})
+        _post_prompt_url = f"{_base_url}?{_qp}"
+    else:
+        _post_prompt_url = _base_url
+
     return {
         "version": "1.0.0",
         "sections": {
@@ -95,7 +106,7 @@ def build_swml(prompt_text, voice, static_greeting=None):
                         "post_prompt": {
                             "text": POST_PROMPT
                         },
-                        "post_prompt_url": "https://hooks.6eyes.dev/voice-caller/post-call",
+                        "post_prompt_url": _post_prompt_url,
                         "params": {
                             # FIX 2026-03-03: wait_for_user defaults to True on outbound calls.
                             # Without these params, agent waits for remote party to speak → silence.
@@ -176,7 +187,8 @@ def check_signalwire_balance():
     return None
 
 
-def make_call(to_number, from_number, voice, prompt_path, static_greeting=None):
+def make_call(to_number, from_number, voice, prompt_path, static_greeting=None,
+              sfdc_id="", account_name=""):
     # BUDGET GUARD: Check balance before placing call
     balance = check_signalwire_balance()
     if balance is not None and balance < 2.0:
@@ -188,7 +200,8 @@ def make_call(to_number, from_number, voice, prompt_path, static_greeting=None):
     
     prompt_text = load_prompt(prompt_path)
     auth_b64 = base64.b64encode(f"{PROJECT_ID}:{AUTH_TOKEN}".encode()).decode()
-    swml = build_swml(prompt_text, voice, static_greeting=static_greeting)
+    swml = build_swml(prompt_text, voice, static_greeting=static_greeting,
+                      sfdc_id=sfdc_id, account_name=account_name)
 
     payload = {
         "command": "dial",
