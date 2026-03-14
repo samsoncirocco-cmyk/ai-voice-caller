@@ -6,6 +6,8 @@ Runs on port 18790 (cloudflared tunnel → hooks.6eyes.dev)
 
 Routes:
   POST /voice-caller/post-call          ← SignalWire post_prompt_url callback
+  POST /voice-caller/inbound            ← Inbound call SWML handler (returns SWML JSON)
+  POST /voice-caller/inbound-callback   ← Inbound call post-prompt callback
   POST /voice-caller/sfdc-sync          ← V2: SFDC live-sync (call_outcome | referral | new_lead)
   GET  /voice-caller/sfdc-sync/status   ← V2: Live-sync log tail + stats
   POST /outlook-sync                    ← Outlook inbox/calendar push from work machine
@@ -24,6 +26,7 @@ import json
 import os
 import re as _re
 import subprocess
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -48,6 +51,8 @@ def index():
         "status": "ok",
         "routes": [
             "POST /voice-caller/post-call",
+            "POST /voice-caller/inbound            ← Inbound call SWML handler",
+            "POST /voice-caller/inbound-callback   ← Inbound post-prompt callback",
             "POST /voice-caller/sfdc-sync          ← V2 live-sync (call_outcome|referral|new_lead)",
             "GET  /voice-caller/sfdc-sync/status   ← sync log tail + stats",
             "POST /outlook-sync",
@@ -135,6 +140,117 @@ def post_call_summary():
     threading.Thread(target=push_to_sf, args=(call_id,), daemon=True).start()
 
     return jsonify({"status": "logged", "call_id": call_id}), 200
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INBOUND CALL HANDLING
+# When prospects call back our local-presence numbers (605/402/515), SignalWire
+# hits this endpoint to get SWML instructions. Returns an AI agent that can
+# greet the caller, look up context from our outbound call history, and either
+# transfer to Samson or take a message.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Import the inbound handler
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "execution"))
+try:
+    from inbound_handler import build_inbound_swml, log_inbound_call
+    _INBOUND_AVAILABLE = True
+except ImportError:
+    _INBOUND_AVAILABLE = False
+
+INBOUND_LOG_FILE = os.path.join(LOG_DIR, "inbound_calls.jsonl")
+
+
+@app.route("/voice-caller/inbound", methods=["POST"])
+def inbound_call_handler():
+    """
+    SignalWire calls this URL when an inbound call arrives on any of our numbers.
+    Returns SWML JSON that SignalWire executes to handle the call.
+
+    Configure in SignalWire: Phone Number → Voice URL → POST https://hooks.6eyes.dev/voice-caller/inbound
+    """
+    if not _INBOUND_AVAILABLE:
+        return jsonify({"error": "inbound_handler module not available"}), 500
+
+    data = request.json or {}
+    # SignalWire sends call details in the POST body
+    from_number = data.get("call", {}).get("from", data.get("from", ""))
+    to_number = data.get("call", {}).get("to", data.get("to", ""))
+
+    app.logger.info(f"[inbound] Call from {from_number} → {to_number}")
+
+    # Log the inbound call
+    log_inbound_call(from_number, to_number, data)
+
+    # Build and return SWML
+    swml = build_inbound_swml(from_number, to_number)
+
+    print(f"[inbound] {datetime.now(timezone.utc).isoformat()} — {from_number} → {to_number} — SWML served")
+    return jsonify(swml), 200
+
+
+@app.route("/voice-caller/inbound-callback", methods=["POST"])
+def inbound_callback():
+    """
+    Post-prompt callback for inbound calls.
+    Logs the AI's summary of what happened during the inbound call.
+    """
+    data = request.json or {}
+    direction = request.args.get("direction", "inbound")
+    from_number = request.args.get("from", data.get("from", ""))
+    to_number = request.args.get("to", data.get("to", ""))
+
+    post_prompt_data = data.get("post_prompt_data", {})
+    summary = (
+        post_prompt_data.get("substituted")
+        or post_prompt_data.get("raw")
+        or data.get("post_prompt_result", data.get("result", ""))
+    )
+
+    call_id = data.get("call_id", "unknown")
+
+    log_entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "direction": "inbound",
+        "call_id": call_id,
+        "from": from_number,
+        "to": to_number,
+        "summary": summary,
+        "raw": data,
+    }
+
+    with open(INBOUND_LOG_FILE, "a") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
+    print(f"[inbound-callback] {call_id} — {from_number} → {to_number} — {str(summary)[:100]}")
+
+    # Alert Samson on Slack about the callback
+    if SLACK_TOKEN := os.environ.get("SLACK_BOT_TOKEN"):
+        try:
+            import requests as req
+            text = (
+                f"📞 *Inbound Call Received*\n"
+                f"From: {from_number} → {to_number}\n"
+                f"Summary: {str(summary)[:200]}"
+            )
+            req.post(
+                "https://slack.com/api/chat.postMessage",
+                headers={
+                    "Authorization": f"Bearer {SLACK_TOKEN}",
+                    "Content-Type": "application/json; charset=utf-8",
+                },
+                json={"channel": "D0AFT6P7N92", "text": text},
+                timeout=10,
+            )
+        except Exception:
+            pass
+
+    return jsonify({"status": "logged", "call_id": call_id, "direction": "inbound"}), 200
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# END INBOUND CALL HANDLING
+# ══════════════════════════════════════════════════════════════════════════════
 
 
 OUTLOOK_SYNC_FILE = os.path.join(os.path.dirname(__file__), "logs", "outlook-sync-latest.json")

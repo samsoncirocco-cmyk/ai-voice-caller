@@ -1,0 +1,45 @@
+
+[k12] Starting K-12 campaign — 2026-03-06T15:00:01.944515
+[k12] Prompt: prompts/k12.txt
+[k12] DB: /home/samson/.openclaw/workspace/projects/ai-voice-caller/campaigns/accounts.db
+[k12] Found 174 new K-12 accounts to call.
+[k12] Exported 174 accounts → /home/samson/.openclaw/workspace/projects/ai-voice-caller/campaigns/k12-accounts.csv
+[k12] Running: /usr/bin/python3 /home/samson/.openclaw/workspace/projects/ai-voice-caller/campaign_runner_v2.py /home/samson/.openclaw/workspace/projects/ai-voice-caller/campaigns/k12-accounts.csv --prompt prompts/k12.txt --voice openai.onyx --interval 240 --limit 50 --business-hours
+[slack] (no token) :school: *K-12 Campaign Starting* — 174 accounts queued
+>Prompt: `k12.txt` | Interval: 240s | Limit: 50
+>LIVE — calls will be placed during business hours
+[k12] Campaign timed out after 4 hours.
+[slack] (no token) :school: *K-12 Campaign Run — 2026-03-06 19:00 MST*
+>*Total K-12 accounts:* 175
+>*Processed this run:* -1
+>*Remaining (new):* 175
+
+*Outcome breakdown:*
+>  :handshake: Interested: 0
+>  :telephone_receiver: Voicemail: 0
+>  :no_bell: No answer: 0
+>  :x: Not interested: 0
+>  :recycle: Referral given: 0
+>  :warning: DNC/Failures: 0
+
+:stopwatch: Elapsed: 240m 0s
+
+:warning: *Exit code: -1* — check `logs/` for details.
+
+[k12] Done. Posted summary to Slack.
+:school: *K-12 Campaign Run — 2026-03-06 19:00 MST*
+>*Total K-12 accounts:* 175
+>*Processed this run:* -1
+>*Remaining (new):* 175
+
+*Outcome breakdown:*
+>  :handshake: Interested: 0
+>  :telephone_receiver: Voicemail: 0
+>  :no_bell: No answer: 0
+>  :x: Not interested: 0
+>  :recycle: Referral given: 0
+>  :warning: DNC/Failures: 0
+
+:stopwatch: Elapsed: 240m 0s
+
+:warning: *Exit code: -1* — check `logs/` for details.

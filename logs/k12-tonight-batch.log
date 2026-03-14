@@ -1,0 +1,159 @@
+
+Loaded 173 leads from campaigns/k12-accounts.csv
+Will process 12 leads (starting at index 8)
+Interval: 240s between calls (~0.2 calls/min)
+Calling from: +14806024668
+Webhook: https://hooks.6eyes.dev/voice-caller/post-call
+
+
+============================================================
+[1/12] Avon School District 4-1
+  Phone: +605286329137
+  State: South Dakota | Type: Education
+  [research] Cache miss — researching: Avon School District 4-1 (South Dakota, Education)
+  [research] OpenAI fallback failed: 429 Client Error: Too Many Requests for url: https://api.openai.com/v1/chat/completions
+  [research] All providers failed, using generic context
+  Hook: I'm reaching out to education organizations in South Dakota about network securi
+  Calling +605286329137...
+  ❌ Call failed: {"errors":[{"type":"validation_error","code":"not_routable","message":"Unable to locate a route to t
+  Waiting 265s before next call...
+
+============================================================
+[2/12] Baltic School District, SD
+  Phone: +16055295464
+  State: South Dakota | Type: Education
+  [research] Cache miss — researching: Baltic School District, SD (South Dakota, Education)
+  [research] OpenAI fallback failed: 429 Client Error: Too Many Requests for url: https://api.openai.com/v1/chat/completions
+  [research] All providers failed, using generic context
+  Hook: I'm reaching out to education organizations in South Dakota about network securi
+  Calling +16055295464...
+  ✅ Call initiated: 4a421eaf-4e61-490f-b367-845d703053e4
+  Waiting 282s before next call...
+
+============================================================
+[3/12] Belle Fourche School District
+  Phone: +16057233355
+  State: South Dakota | Type: Education
+  [research] Cache miss — researching: Belle Fourche School District (South Dakota, Education)
+  [research] OpenAI fallback failed: 429 Client Error: Too Many Requests for url: https://api.openai.com/v1/chat/completions
+  [research] All providers failed, using generic context
+  Hook: I'm reaching out to education organizations in South Dakota about network securi
+  Calling +16057233355...
+  ✅ Call initiated: a3273881-0da4-4674-b364-f82326468828
+  Waiting 255s before next call...
+
+============================================================
+[4/12] Bennett County School District, SD
+  Phone: +16056856112
+  State: South Dakota | Type: Education
+  [research] Cache miss — researching: Bennett County School District, SD (South Dakota, Education)
+  [research] OpenAI fallback failed: 429 Client Error: Too Many Requests for url: https://api.openai.com/v1/chat/completions
+  [research] All providers failed, using generic context
+  Hook: I'm reaching out to education organizations in South Dakota about network securi
+  Calling +16056856112...
+  ✅ Call initiated: 495e218a-0fb6-4678-a978-ade30772ced3
+  Waiting 255s before next call...
+
+============================================================
+[5/12] Beresford School District, SD
+  Phone: +16057635012
+  State: South Dakota | Type: Education
+  [research] Cache miss — researching: Beresford School District, SD (South Dakota, Education)
+  [research] OpenAI fallback failed: 429 Client Error: Too Many Requests for url: https://api.openai.com/v1/chat/completions
+  [research] All providers failed, using generic context
+  Hook: I'm reaching out to education organizations in South Dakota about network securi
+  Calling +16057635012...
+  ✅ Call initiated: 937af9da-ff45-47af-8ac6-73db3074d358
+  Waiting 243s before next call...
+
+============================================================
+[6/12] Bison School, SD
+  Phone: +16052445273
+  State: South Dakota | Type: Education
+  [research] Cache miss — researching: Bison School, SD (South Dakota, Education)
+  [research] OpenAI fallback failed: 429 Client Error: Too Many Requests for url: https://api.openai.com/v1/chat/completions
+  [research] All providers failed, using generic context
+  Hook: I'm reaching out to education organizations in South Dakota about network securi
+  Calling +16052445273...
+  ✅ Call initiated: 911ca711-dfea-47ae-9417-cb1da2f8fd5e
+  Waiting 266s before next call...
+
+============================================================
+[7/12] Bon Homme School District, SD
+  Phone: +16055893388
+  State: South Dakota | Type: Education
+  [research] Cache miss — researching: Bon Homme School District, SD (South Dakota, Education)
+  [research] OpenAI fallback failed: 429 Client Error: Too Many Requests for url: https://api.openai.com/v1/chat/completions
+  [research] All providers failed, using generic context
+  Hook: I'm reaching out to education organizations in South Dakota about network securi
+  Calling +16055893388...
+  ✅ Call initiated: 77b2dc3b-3519-40e7-b788-e2b46c98ff61
+  Waiting 248s before next call...
+
+============================================================
+[8/12] Bonesteel-Fairfax School, SD
+  Phone: +16056542314
+  State: South Dakota | Type: Education
+  [research] Cache miss — researching: Bonesteel-Fairfax School, SD (South Dakota, Education)
+  [research] OpenAI fallback failed: 429 Client Error: Too Many Requests for url: https://api.openai.com/v1/chat/completions
+  [research] All providers failed, using generic context
+  Hook: I'm reaching out to education organizations in South Dakota about network securi
+  Calling +16056542314...
+  ✅ Call initiated: 8451fe8c-713f-4acf-8c3a-e7efb33c6a60
+  Waiting 226s before next call...
+
+============================================================
+[9/12] Bowdle City School District (SD) ISD - 22-1
+  Phone: +16052856272
+  State: South Dakota | Type: Education
+  [research] Cache miss — researching: Bowdle City School District (SD) ISD - 22-1 (South Dakota, Education)
+  [research] OpenAI fallback failed: 429 Client Error: Too Many Requests for url: https://api.openai.com/v1/chat/completions
+  [research] All providers failed, using generic context
+  Hook: I'm reaching out to education organizations in South Dakota about network securi
+  Calling +16052856272...
+  ✅ Call initiated: c96104e0-a962-49a3-ad3d-05be1f6ea34e
+  Waiting 280s before next call...
+
+============================================================
+[10/12] Bridgewater-Emery School District, SD
+  Phone: +16054494271
+  State: South Dakota | Type: Education
+  [research] Cache miss — researching: Bridgewater-Emery School District, SD (South Dakota, Education)
+  [research] OpenAI fallback failed: 429 Client Error: Too Many Requests for url: https://api.openai.com/v1/chat/completions
+  [research] All providers failed, using generic context
+  Hook: I'm reaching out to education organizations in South Dakota about network securi
+  Calling +16054494271...
+  ✅ Call initiated: 87cf6997-499f-47fc-a3c2-1e62f4d684eb
+  Waiting 264s before next call...
+
+============================================================
+[11/12] Britton-Hecla School, NE
+  Phone: +16054482234
+  State: South Dakota | Type: Education
+  [research] Cache miss — researching: Britton-Hecla School, NE (South Dakota, Education)
+  [research] OpenAI fallback failed: 429 Client Error: Too Many Requests for url: https://api.openai.com/v1/chat/completions
+  [research] All providers failed, using generic context
+  Hook: I'm reaching out to education organizations in South Dakota about network securi
+  Calling +16054482234...
+  ✅ Call initiated: 76f47953-d7fa-4078-a4c7-3fd776b27dc6
+  Waiting 215s before next call...
+
+============================================================
+[12/12] Brownell-Talbot College Preparatory School, NE
+  Phone: +14025563772
+  State: South Dakota | Type: Education
+  [research] Cache miss — researching: Brownell-Talbot College Preparatory School, NE (South Dakota, Education)
+  [research] OpenAI fallback failed: 429 Client Error: Too Many Requests for url: https://api.openai.com/v1/chat/completions
+  [research] All providers failed, using generic context
+  Hook: I'm reaching out to education organizations in South Dakota about network securi
+  Calling +14025563772...
+  ✅ Call initiated: 43ff5e93-6c79-4362-b9f9-5cbad786b28e
+
+============================================================
+CAMPAIGN SUMMARY
+  Completed: 18
+  Failed:    2
+  Remaining: 153
+  State saved to: /home/samson/.openclaw/workspace/projects/ai-voice-caller/campaigns/.state/k12-accounts.json
+  Call log: /home/samson/.openclaw/workspace/projects/ai-voice-caller/logs/campaign_log.jsonl
+  Summaries: /home/samson/.openclaw/workspace/projects/ai-voice-caller/logs/call_summaries.jsonl

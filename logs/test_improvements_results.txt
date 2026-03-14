@@ -1,0 +1,14 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /home/samson/.openclaw/workspace/projects/ai-voice-caller/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/samson/.openclaw/workspace/projects/ai-voice-caller
+plugins: anyio-4.12.1
+collecting ... collected 5 items
+
+tests/test_voice_caller_improvements.py::test_transcript_saving PASSED   [ 20%]
+tests/test_voice_caller_improvements.py::test_fallback_stub PASSED       [ 40%]
+tests/test_voice_caller_improvements.py::test_agent_name_parsing PASSED  [ 60%]
+tests/test_voice_caller_improvements.py::test_cost_tracker PASSED        [ 80%]
+tests/test_voice_caller_improvements.py::test_cache_ttl PASSED           [100%]
+
+============================== 5 passed in 0.52s ===============================

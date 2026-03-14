@@ -1,0 +1,30 @@
+2026-03-09 15:00:01,606 [Tracker] SLACK_BOT_TOKEN not set — cannot post digest
+⚠️  SLACK_BOT_TOKEN not set. Digest:
+
+📊 *AI Voice Caller — Weekly Performance Digest*
+Total calls tracked: *28* | Last updated: 2026-03-04T16:42:41.517549-07:00
+
+*Prompt Performance (engagement_rate = answered + interested / total):*
+  • `cold_outreach` / government — engage=100% ans=50% ref=0% n=2
+  • `cold_outreach` / higher_ed — engage=100% ans=0% ref=0% n=1
+  • `paul` / k12 — engage=100% ans=50% ref=0% n=4
+  • `paul` / government — engage=100% ans=25% ref=0% n=12
+  • `paul` / other — engage=100% ans=100% ref=0% n=3
+  • `k12` / k12 — engage=100% ans=0% ref=0% n=1
+  • `cold_outreach` / other — engage=80% ans=0% ref=0% n=5
+
+*Best Call Times (answer_rate):*
+  • morning: ans=57%  n=7
+  • midday: ans=57%  n=7
+  • lunch: ans=14%  n=7
+  • afternoon: ans=0%  n=2
+  • late_afternoon: ans=0%  n=2
+
+*State Breakdown:*
+  • AZ: engage=100%  ans=39%  n=23
+  • XX: engage=67%  ans=0%  n=3
+  • CO: engage=100%  ans=0%  n=2
+
+*Smart Routing Recommendations:*
+  • government: prompt=`paul`
+⚠️  Slack post failed (check logs)

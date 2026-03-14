@@ -1,0 +1,46 @@
+{
+  "k12": {
+    "prompts/paul.txt": {
+      "calls": 0,
+      "answered": 0
+    },
+    "prompts/k12.txt": {
+      "calls": 0,
+      "answered": 0
+    },
+    "prompts/cold_outreach.txt": {
+      "calls": 0,
+      "answered": 0
+    }
+  },
+  "government": {
+    "prompts/paul.txt": {
+      "calls": 0,
+      "answered": 0
+    },
+    "prompts/cold_outreach.txt": {
+      "calls": 0,
+      "answered": 0
+    }
+  },
+  "higher_ed": {
+    "prompts/cold_outreach.txt": {
+      "calls": 0,
+      "answered": 0
+    },
+    "prompts/paul.txt": {
+      "calls": 0,
+      "answered": 0
+    }
+  },
+  "other": {
+    "prompts/cold_outreach.txt": {
+      "calls": 0,
+      "answered": 0
+    },
+    "prompts/paul.txt": {
+      "calls": 0,
+      "answered": 0
+    }
+  }
+}

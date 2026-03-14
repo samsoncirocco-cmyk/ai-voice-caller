@@ -1,0 +1,197 @@
+{
+  "processed": {
+    "test-123": {
+      "processed_at": "2026-03-14T03:06:59.153171+00:00",
+      "outcome": "No Answer",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "676b714c-433a-48f9-a035-49a9a3d40d4f": {
+      "processed_at": "2026-03-14T03:06:59.153377+00:00",
+      "outcome": "No Answer",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "fix-verify-001": {
+      "processed_at": "2026-03-14T03:06:59.153496+00:00",
+      "outcome": "No Answer",
+      "lead_score": 20,
+      "actions": 0
+    },
+    "572555b6-0f84-4d18-b959-0d15dcbcb27b": {
+      "processed_at": "2026-03-14T03:06:59.153879+00:00",
+      "outcome": "No Answer",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "92cc6cf3-fc1d-46d5-85a1-5dd4118c9556": {
+      "processed_at": "2026-03-14T03:06:59.154365+00:00",
+      "outcome": "No Answer",
+      "lead_score": 20,
+      "actions": 0
+    },
+    "2b259ad3-3fc6-4305-90a4-59d348b1281d": {
+      "processed_at": "2026-03-14T03:06:59.154681+00:00",
+      "outcome": "No Answer",
+      "lead_score": 10,
+      "actions": 0
+    },
+    "c59fae51-161e-47fa-a212-911fe4689bd8": {
+      "processed_at": "2026-03-14T03:06:59.155243+00:00",
+      "outcome": "No Answer",
+      "lead_score": 0,
+      "actions": 1
+    },
+    "95c5ffd6-bf5b-44be-89b5-a356814501a7": {
+      "processed_at": "2026-03-14T03:06:59.155490+00:00",
+      "outcome": "No Answer",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "bd40f95f-0013-46df-8e54-8d1d244d4bec": {
+      "processed_at": "2026-03-14T03:06:59.155634+00:00",
+      "outcome": "No Answer",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "33b05647-0fc2-4cb4-b833-8cb89a6819e1": {
+      "processed_at": "2026-03-14T03:06:59.155978+00:00",
+      "outcome": "No Answer",
+      "lead_score": 20,
+      "actions": 0
+    },
+    "9a165ded-b866-426c-9e36-2c49485ccb65": {
+      "processed_at": "2026-03-14T03:06:59.156469+00:00",
+      "outcome": "No Answer",
+      "lead_score": 20,
+      "actions": 0
+    },
+    "60ccecba-e1df-4a0d-ab46-640243ce94a1": {
+      "processed_at": "2026-03-14T03:06:59.156856+00:00",
+      "outcome": "No Answer",
+      "lead_score": 35,
+      "actions": 0
+    },
+    "76d86b66-ae74-499a-b9d0-145196554639": {
+      "processed_at": "2026-03-14T03:06:59.157244+00:00",
+      "outcome": "No Answer",
+      "lead_score": 30,
+      "actions": 0
+    },
+    "adbb6047-539a-458d-a465-b42ae2713b22": {
+      "processed_at": "2026-03-14T03:06:59.157932+00:00",
+      "outcome": "Meeting Booked",
+      "lead_score": 70,
+      "actions": 1
+    },
+    "fe6122f6-6c4f-40b9-a27c-7101326a4e1e": {
+      "processed_at": "2026-03-14T03:06:59.158492+00:00",
+      "outcome": "Connected",
+      "lead_score": 35,
+      "actions": 0
+    },
+    "061e40b2-8c0f-4716-b8d5-e248a7b81194": {
+      "processed_at": "2026-03-14T03:06:59.158815+00:00",
+      "outcome": "No Answer",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "c0eba94a-2c0f-4f7a-9ea6-6b9e6e3dafdf": {
+      "processed_at": "2026-03-14T03:06:59.159138+00:00",
+      "outcome": "Connected",
+      "lead_score": 15,
+      "actions": 0
+    },
+    "c4934081-1f30-49c0-9425-c888154c29a8": {
+      "processed_at": "2026-03-14T03:06:59.159291+00:00",
+      "outcome": "No Answer",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "0ed6ca80-f867-4657-b215-cbe1ca26db3e": {
+      "processed_at": "2026-03-14T03:06:59.159655+00:00",
+      "outcome": "Wrong Number",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "13089045-8be1-45aa-ac20-ace91b2dac24": {
+      "processed_at": "2026-03-14T03:06:59.160288+00:00",
+      "outcome": "Voicemail",
+      "lead_score": 10,
+      "actions": 0
+    },
+    "d2b30266-1e17-446e-9fb9-b68fce35824d": {
+      "processed_at": "2026-03-14T03:06:59.160627+00:00",
+      "outcome": "No Answer",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "2ce05f33-ba81-4626-961c-14938565cf3e": {
+      "processed_at": "2026-03-14T03:06:59.160976+00:00",
+      "outcome": "Wrong Number",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "f9faca37-cc5a-4c75-a7e6-99c3ec063720": {
+      "processed_at": "2026-03-14T03:06:59.161418+00:00",
+      "outcome": "Connected",
+      "lead_score": 25,
+      "actions": 0
+    },
+    "cc9632f2-086c-4cec-a6e8-8ae81cd1f754": {
+      "processed_at": "2026-03-14T03:06:59.162064+00:00",
+      "outcome": "Meeting Booked",
+      "lead_score": 60,
+      "actions": 1
+    },
+    "e31fb1d9-49b1-4fe0-9d9d-e9fa1646e117": {
+      "processed_at": "2026-03-14T03:06:59.162477+00:00",
+      "outcome": "Voicemail",
+      "lead_score": 0,
+      "actions": 1
+    },
+    "f5219e73-a307-4c7d-99ce-03e80b11bfe5": {
+      "processed_at": "2026-03-14T03:06:59.163056+00:00",
+      "outcome": "No Answer",
+      "lead_score": 15,
+      "actions": 0
+    },
+    "aeb14958-1f65-416d-9b5c-4fb322f24a70": {
+      "processed_at": "2026-03-14T03:06:59.163505+00:00",
+      "outcome": "Voicemail",
+      "lead_score": 15,
+      "actions": 1
+    },
+    "46b09e8d-feac-4996-a4b7-7a18d20116f3": {
+      "processed_at": "2026-03-14T03:06:59.163963+00:00",
+      "outcome": "No Answer",
+      "lead_score": 10,
+      "actions": 0
+    },
+    "0a269c7e-b621-400c-a67a-5c755888be53": {
+      "processed_at": "2026-03-14T03:06:59.164300+00:00",
+      "outcome": "No Answer",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "869b8b8b-b274-4241-b64c-18b0bb739e93": {
+      "processed_at": "2026-03-14T03:06:59.164681+00:00",
+      "outcome": "No Answer",
+      "lead_score": 10,
+      "actions": 0
+    },
+    "618bc1c5-3426-4cfa-9f7a-fd3e187fd8f6": {
+      "processed_at": "2026-03-14T03:06:59.165009+00:00",
+      "outcome": "No Answer",
+      "lead_score": 10,
+      "actions": 0
+    }
+  },
+  "stats": {
+    "total": 31,
+    "connected": 3,
+    "meetings": 0,
+    "referrals": 0,
+    "emails_queued": 3
+  }
+}

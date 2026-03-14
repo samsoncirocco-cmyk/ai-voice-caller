@@ -81,9 +81,11 @@ def build_swml(prompt_text, voice, static_greeting=None):
                         "languages": [
                             {
                                 # Note: "speed" field is INVALID and causes silent AI block failure
+                                # Use "speech_rate" instead (1.0 = normal, 1.2 = faster)
                                 "name": "English",
                                 "code": "en-US",
-                                "voice": voice
+                                "voice": voice,
+                                "speech_rate": 1.2
                             }
                         ],
                         "prompt": {
@@ -104,9 +106,11 @@ def build_swml(prompt_text, voice, static_greeting=None):
                             "static_greeting": static_greeting or DEFAULT_GREETING,
                             # FIX 2026-03-09: Reduced from 30s → 10s.
                             # 30s caused AI to loop on open voicemail lines for 68+ minutes.
-                            "attention_timeout": 10000,
-                            "inactivity_timeout": 10000,
-                            "end_of_speech_timeout": 2000,
+                            # FIX 2026-03-12: Increased back to 20s — 10s was dropping real
+                            # conversations during natural pauses. 20s balances both risks.
+                            "attention_timeout": 20000,
+                            "inactivity_timeout": 20000,
+                            "end_of_speech_timeout": 3000,
                             # asr_engine format: "provider:model" — colon-separated string
                             # NOT a nested engine.asr object (that was causing silent AI failure)
                             "asr_engine": "deepgram:nova-3"
@@ -119,7 +123,7 @@ def build_swml(prompt_text, voice, static_greeting=None):
                             "functions": [
                                 {
                                     "function": "end_call",
-                                    "purpose": "Hang up the call immediately. MUST be called after leaving a voicemail message. Also call if no one answers after greeting, or call is clearly done.",
+                                    "purpose": "Hang up the call. ONLY call this AFTER you have completely finished speaking your last sentence — never interrupt yourself mid-sentence. Use when: (1) voicemail message is fully delivered, (2) call is clearly over and both parties have said goodbye, (3) no one answers after your greeting and silence persists.",
                                     "argument": {
                                         "type": "object",
                                         "properties": {

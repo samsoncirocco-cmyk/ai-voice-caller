@@ -28,6 +28,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -219,6 +220,13 @@ def load_research_contacts(account_name):
     safe_name = re.sub(r"[^\w\-]", "_", account_name)[:80]
     cache_file = RESEARCH_CACHE / f"{safe_name}.json"
     if not cache_file.exists():
+        return []
+    if os.path.getmtime(cache_file) < time.time() - (30 * 86400):
+        try:
+            cache_file.unlink()
+            log.info("  Removed stale research cache for %s", account_name)
+        except OSError:
+            pass
         return []
     try:
         with open(cache_file) as f:

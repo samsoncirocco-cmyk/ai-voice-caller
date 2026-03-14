@@ -56,7 +56,7 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Fallback: OpenAI (no web grounding, but good for structured output)
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_MODEL = "grok-4-fast-non-reasoning"  # xAI grok-4-fast-non-reasoning via OPENAI_BASE_URL=https://api.x.ai/v1
 
 
 # ─── Research Prompt ─────────────────────────────────────────────
@@ -357,13 +357,20 @@ def research_account(account_name, state, account_type="Education", sf_account_i
 
     # --- L1: local cache ---
     if cache_file.exists():
+        if os.path.getmtime(cache_file) < time.time() - (30 * 86400):
+            try:
+                cache_file.unlink()
+                print(f"  [research] L1 stale cache removed: {cache_file.name}")
+            except Exception:
+                pass
         try:
-            cached = json.loads(cache_file.read_text())
-            if _check_json_ttl(cached, L1_TTL_DAYS):
-                print(f"  [research] L1 hit: {account_name} (key={cache_key})")
-                cached.setdefault("account_name", account_name)
-                cached.setdefault("state", state)
-                return cached
+            if cache_file.exists():
+                cached = json.loads(cache_file.read_text())
+                if _check_json_ttl(cached, L1_TTL_DAYS):
+                    print(f"  [research] L1 hit: {account_name} (key={cache_key})")
+                    cached.setdefault("account_name", account_name)
+                    cached.setdefault("state", state)
+                    return cached
         except Exception:
             pass
 
@@ -455,6 +462,20 @@ def _format_contacts_for_prompt(contacts):
 
 # ─── Dynamic SWML Builder ───────────────────────────────────────
 
+def parse_agent_name(prompt_path: str) -> str:
+    """Read first prompt line and parse '# AGENT_NAME: <Name>'."""
+    full_path = Path(__file__).resolve().parent / prompt_path
+    try:
+        with open(full_path, encoding="utf-8") as f:
+            first_line = f.readline().strip()
+    except Exception:
+        return "Paul"
+
+    match = re.match(r"^#\s*AGENT_NAME:\s*(.+?)\s*$", first_line)
+    if match:
+        return match.group(1).strip()
+    return "Paul"
+
 def build_context_preamble(context):
     """
     Build a context block to prepend to any prompt file (paul.txt, cold_outreach.txt).
@@ -526,6 +547,7 @@ def build_dynamic_swml(context, base_prompt_path="prompts/paul.txt",
     )
 
     # Build a personalized static greeting using the account context
+    agent_name = parse_agent_name(base_prompt_path)
     account_name = context.get("account_name", "")
     hook = context.get("hook_1", "")
     if account_name and hook:
@@ -533,7 +555,7 @@ def build_dynamic_swml(context, base_prompt_path="prompts/paul.txt",
         static_greeting = hook[:200]
     else:
         static_greeting = (
-            "Hi there! This is Paul calling from Fortinet. "
+            f"Hi there! This is {agent_name} calling from Fortinet. "
             "I'm reaching out about network security solutions. "
             "Do you have just a minute?"
         )
@@ -544,6 +566,7 @@ def build_dynamic_swml(context, base_prompt_path="prompts/paul.txt",
             "main": [
                 # answer verb REQUIRED before ai — establishes audio path
                 {"answer": {}},
+                {"record_call": {"stereo": True, "format": "mp3"}},
                 {
                     "ai": {
                         "languages": [

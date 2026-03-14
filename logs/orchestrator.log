@@ -3,3 +3,6 @@
 2026-03-05 21:16:25,295 [INFO] Would call: Aberdeen Christian School, SD (16052252053)
 2026-03-05 21:16:25,295 [INFO] Would call: Adams Community (16413225229)
 2026-03-05 21:16:25,295 [INFO] Would call: Agar-Blunt-Onida School District (16052582618)
+2026-03-09 10:31:17,413 [INFO] SmartRouter initialized — stats file: /home/samson/.openclaw/workspace/projects/ai-voice-caller/campaigns/performance_stats.json
+2026-03-09 10:31:17,414 [INFO] DRY RUN — 1 accounts due
+2026-03-09 10:31:17,415 [INFO] Would call: Eureka Public School District, SD    state=SD  vertical=k12         prompt=prompts/k12.txt                 voice=openai.onyx       ⛔ outside time window
