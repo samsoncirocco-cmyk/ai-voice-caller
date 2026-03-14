@@ -301,6 +301,121 @@ def cmd_dry_run():
     print(f"{'='*70}")
 
 
+def cmd_outlook_draft(silent: bool = False) -> dict:
+    """
+    Push all queued emails to Samson's Outlook drafts via the work machine bridge.
+    Safe for cron — no interactive prompts, no real sending.
+    Returns a summary dict for cron logging.
+    """
+    BRIDGE_URL   = "http://192.168.0.127:8899/draft"
+    BRIDGE_TOKEN = "outlook-bridge-2026"
+
+    try:
+        import requests as _req
+    except ImportError:
+        msg = "requests library not available"
+        if not silent:
+            print(f"[ERROR] {msg}")
+        return {"status": "error", "message": msg, "drafted": 0, "skipped": 0, "failed": 0}
+
+    emails = get_queued_emails()
+    if not emails:
+        if not silent:
+            print("No queued emails.")
+        return {"status": "ok", "message": "no queued emails", "drafted": 0, "skipped": 0, "failed": 0}
+
+    drafted = 0
+    skipped = 0
+    failed  = 0
+
+    # Health-check the bridge first (fail fast if work machine is offline)
+    try:
+        health = _req.get(
+            "http://192.168.0.127:8899/health",
+            headers={"X-Bridge-Token": BRIDGE_TOKEN},
+            timeout=5,
+        )
+        bridge_ok = health.status_code == 200
+    except Exception:
+        bridge_ok = False
+
+    if not bridge_ok:
+        if not silent:
+            print("[WARN] Outlook bridge offline — saving emails as HTML instead.")
+        # Fall back to HTML rendering
+        for em in emails:
+            doc_id  = em["_doc_id"]
+            to      = em.get("email", em.get("to_email", ""))
+            subject, body = render_email(em)
+            if not subject or not to:
+                skipped += 1
+                continue
+            filepath = save_as_html(doc_id, to, subject, body)
+            db.collection("email-queue").document(doc_id).update({
+                "status":      "rendered",
+                "rendered_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                "rendered_file": filepath,
+            })
+            if not silent:
+                print(f"  [RENDERED] {to} -> {filepath}")
+            drafted += 1
+        return {"status": "fallback_html", "drafted": drafted, "skipped": skipped, "failed": failed}
+
+    if not silent:
+        print(f"Creating {len(emails)} Outlook draft(s) for Samson's review...")
+
+    for em in emails:
+        doc_id  = em["_doc_id"]
+        to      = em.get("email", em.get("to_email", ""))
+        subject, body = render_email(em)
+
+        if not subject:
+            if not silent:
+                print(f"  [SKIP] {doc_id}: unknown info_type '{em.get('info_type')}'")
+            skipped += 1
+            continue
+
+        if not to:
+            if not silent:
+                print(f"  [SKIP] {doc_id}: no email address")
+            skipped += 1
+            continue
+
+        try:
+            resp = _req.post(
+                BRIDGE_URL,
+                headers={
+                    "X-Bridge-Token": BRIDGE_TOKEN,
+                    "Content-Type":   "application/json",
+                },
+                json={"to": to, "subject": subject, "body": body},
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                entry_id = resp.json().get("entry_id", "")
+                db.collection("email-queue").document(doc_id).update({
+                    "status":       "outlook_draft",
+                    "drafted_at":   datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                    "outlook_entry_id": entry_id,
+                })
+                if not silent:
+                    print(f"  [DRAFTED] {to} — {subject[:60]}")
+                drafted += 1
+            else:
+                if not silent:
+                    print(f"  [FAILED] {to} — bridge returned {resp.status_code}: {resp.text[:80]}")
+                failed += 1
+        except Exception as exc:
+            if not silent:
+                print(f"  [FAILED] {to} — {exc}")
+            failed += 1
+
+    if not silent:
+        print(f"\nDone: {drafted} drafted, {skipped} skipped, {failed} failed.")
+
+    return {"status": "ok", "drafted": drafted, "skipped": skipped, "failed": failed}
+
+
 def cmd_send():
     """Send all queued emails."""
     emails = get_queued_emails()
@@ -319,6 +434,7 @@ def cmd_send():
         return
 
     gmail_user, gmail_password = get_smtp_creds()
+    use_smtp = bool(gmail_user and gmail_password)
 
     if use_smtp:
         print(f"Sending via Gmail SMTP ({gmail_user})")
@@ -383,9 +499,11 @@ def cmd_send():
 def main():
     parser = argparse.ArgumentParser(description="Process queued emails from Firestore")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--list", action="store_true", help="Show queued emails")
-    group.add_argument("--dry-run", action="store_true", help="Preview rendered templates")
-    group.add_argument("--send", action="store_true", help="Send all queued emails")
+    group.add_argument("--list",           action="store_true", help="Show queued emails")
+    group.add_argument("--dry-run",        action="store_true", help="Preview rendered templates")
+    group.add_argument("--send",           action="store_true", help="Send all queued emails (requires interactive approval)")
+    group.add_argument("--outlook-draft",  action="store_true", help="Push queued emails to Samson's Outlook drafts via work machine bridge")
+    group.add_argument("--cron",           action="store_true", help="Cron-safe: run --outlook-draft silently, exit 0 if nothing queued")
 
     args = parser.parse_args()
 
@@ -395,6 +513,32 @@ def main():
         cmd_dry_run()
     elif args.send:
         cmd_send()
+    elif args.outlook_draft:
+        cmd_outlook_draft(silent=False)
+    elif args.cron:
+        result = cmd_outlook_draft(silent=True)
+        if result["drafted"] > 0 or result["failed"] > 0:
+            # Post to Slack when there's activity worth noting
+            try:
+                import requests as _req, os
+                token = os.environ.get("SLACK_BOT_TOKEN", "")
+                if token:
+                    _req.post(
+                        "https://slack.com/api/chat.postMessage",
+                        headers={"Authorization": f"Bearer {token}"},
+                        json={
+                            "channel": "C0AG2ML0C57",  # #activity-log
+                            "text": (
+                                f":email: *send_emails cron* — "
+                                f"{result['drafted']} Outlook draft(s) created for Samson's review"
+                                + (f", {result['failed']} failed" if result['failed'] else "")
+                                + " (`execution/send_emails.py --cron`)"
+                            ),
+                        },
+                        timeout=10,
+                    )
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
