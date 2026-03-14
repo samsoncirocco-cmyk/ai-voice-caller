@@ -15,8 +15,11 @@ sys.path.insert(0, str(ROOT_DIR / "execution"))
 from sfdc_guardrails import normalize_phone_digits, resolve_target_org, validate_required_fields
 
 SF_ALIAS = resolve_target_org("fortinet")
-SUMMARIES_PATH = "logs/call_summaries.jsonl"
-STATE_PATH = "logs/sfdc-push-state.json"
+# FIX 2026-03-13: Use absolute paths so sfdc_push.py works regardless of CWD.
+# Prior bug: relative paths silently opened wrong file when run from non-project-root dirs.
+_PROJECT_ROOT = Path(__file__).resolve().parent
+SUMMARIES_PATH = str(_PROJECT_ROOT / "logs" / "call_summaries.jsonl")
+STATE_PATH     = str(_PROJECT_ROOT / "logs" / "sfdc-push-state.json")
 
 
 def _run_sf(args: List[str]) -> Tuple[bool, str]:
@@ -210,15 +213,22 @@ def main() -> int:
             # Default behavior: process missing sf_task_id
             pass
 
-        phone_last10 = _last10(item.get("to") or item.get("from"))
-        if not phone_last10:
-            skipped += 1
-            continue
+        sfdc_id = item.get("sfdc_id", "").strip()
+        if sfdc_id:
+            account_id = sfdc_id
+            account_name_log = item.get("account_name", "Unknown")
+        else:
+            phone_last10 = _last10(item.get("to") or item.get("from"))
+            if not phone_last10:
+                skipped += 1
+                continue
 
-        account = _query_account_by_phone(phone_last10)
-        if not account or not account.get("Id"):
-            skipped += 1
-            continue
+            account = _query_account_by_phone(phone_last10)
+            if not account or not account.get("Id"):
+                skipped += 1
+                continue
+            account_id = account["Id"]
+            account_name_log = account.get("Name", "Unknown")
 
         processed += 1
         date_str = _extract_date(item.get("timestamp"))
@@ -226,16 +236,16 @@ def main() -> int:
 
         if args.dry_run:
             disposition = _parse_disposition(summary)
-            print(f"Dry-run: {disposition} | {account.get('Name','?')} ({account.get('Id')}) | call_id={call_id}")
+            print(f"Dry-run: {disposition} | {account_name_log} ({account_id}) | call_id={call_id}")
             continue
 
-        task_id = _create_task(account["Id"], date_str, summary, account.get("Name", ""))
+        task_id = _create_task(account_id, date_str, summary, account_name_log)
         if not task_id:
             errors += 1
             continue
 
         item["sf_task_id"] = task_id
-        item["sf_account_id"] = account["Id"]
+        item["sf_account_id"] = account_id
         created += 1
 
     if not args.dry_run:

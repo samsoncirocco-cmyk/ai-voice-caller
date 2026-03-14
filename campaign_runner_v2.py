@@ -45,6 +45,7 @@ import random
 import re
 import sys
 import time
+import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -352,6 +353,19 @@ def run_campaign(csv_path, args):
     else:
         print(f"Calling from: {FROM_NUMBER}")
         print(f"Webhook: {WEBHOOK_URL}\n")
+        # FIX 2026-03-13: Pre-campaign webhook health check (was missing in CSV mode).
+        # The Mar 7-9 campaign lost all 38 summaries because the hooks-server was down.
+        # DB mode already had this check; now CSV mode has it too.
+        import subprocess as _sp2
+        _pre_check = _sp2.run(
+            [sys.executable, str(Path(__file__).resolve().parent / "execution" / "pre_campaign_check.py")],
+            capture_output=True, text=True,
+        )
+        if _pre_check.returncode != 0:
+            print("❌ ABORT: hooks-server/tunnel is unreachable.")
+            print("   Post-call summaries would NOT be captured. Fix: pm2 restart hooks-server, then retry.")
+            print(_pre_check.stdout)
+            sys.exit(1)
 
     consecutive_failures = 0
 
@@ -388,12 +402,24 @@ def run_campaign(csv_path, args):
             continue
 
         # Step 2: Build personalized SWML
+        # FIX 2026-03-13: Embed sfdc_id as URL query param in post_prompt_url.
+        # SignalWire does NOT echo back global_data in post_prompt_url callbacks,
+        # so we cannot rely on global_data for sfdc_id delivery. URL params are
+        # guaranteed: SignalWire calls the URL verbatim, including all query params.
+        _sfdc_id     = lead.get("sf_account_id", "") or ""
+        _acct_name   = (lead.get("name", "") or lead.get("account", "") or "")
+        _qp          = urllib.parse.urlencode({"sfdc_id": _sfdc_id, "account_name": _acct_name})
+        _webhook_url = f"{WEBHOOK_URL}?{_qp}" if _sfdc_id or _acct_name else WEBHOOK_URL
         swml = build_dynamic_swml(
             context,
             base_prompt_path=args.prompt,
             voice=args.voice,
-            webhook_url=WEBHOOK_URL
+            webhook_url=_webhook_url,
         )
+        global_data = swml.get("global_data", {}) or {}
+        global_data["sfdc_id"] = _sfdc_id
+        global_data["account_name"] = _acct_name
+        swml["global_data"] = global_data
 
         # Step 3: Place call
         print(f"  Calling {lead['phone']}...")
@@ -582,12 +608,24 @@ def run_campaign_db(args):
         print(f"  Research: {context_source} | Hook: {context.get('hook_1', 'N/A')[:60]}")
         
         # Build SWML with GSD-routed prompt
+        # FIX 2026-03-13: Embed sfdc_id as URL query param in post_prompt_url.
+        # SignalWire does NOT echo back global_data in post_prompt_url callbacks,
+        # so we cannot rely on global_data for sfdc_id delivery. URL params are
+        # guaranteed: SignalWire calls the URL verbatim, including all query params.
+        _sfdc_id     = account.get("sfdc_id", "") or ""
+        _acct_name   = (account.get("name", "") or account.get("account_name", "") or "")
+        _qp          = urllib.parse.urlencode({"sfdc_id": _sfdc_id, "account_name": _acct_name})
+        _webhook_url = f"{WEBHOOK_URL}?{_qp}" if _sfdc_id or _acct_name else WEBHOOK_URL
         swml = build_dynamic_swml(
             context,
             base_prompt_path=gsd_prompt,
             voice=voice,
-            webhook_url=WEBHOOK_URL,
+            webhook_url=_webhook_url,
         )
+        global_data = swml.get("global_data", {}) or {}
+        global_data["sfdc_id"] = _sfdc_id
+        global_data["account_name"] = _acct_name
+        swml["global_data"] = global_data
         
         # Place call with GSD-routed from_number
         print(f"  Calling {account['phone']}...")

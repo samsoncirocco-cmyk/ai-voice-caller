@@ -66,6 +66,25 @@ def post_call_summary():
     Logs to logs/call_summaries.jsonl (flat file, easy to query).
     """
     data = request.json or {}
+    # FIX 2026-03-13: Read sfdc_id from URL query params FIRST (guaranteed delivery).
+    # SignalWire does NOT echo global_data in post_prompt_url callbacks, so we embed
+    # sfdc_id and account_name as query params in the URL at call-creation time.
+    # Fall back to global_data / top-level fields for backward compatibility.
+    global_data = data.get("global_data", {}) or {}
+    sfdc_id = (
+        request.args.get("sfdc_id", "")
+        or global_data.get("sfdc_id", "")
+        or data.get("sfdc_id", "")
+    )
+    account_name = (
+        request.args.get("account_name", "")
+        or global_data.get("account_name", "")
+        or data.get("account_name", "")
+    )
+    app.logger.info(
+        f"Webhook raw keys: {list(data.keys())} | "
+        f"query_params: {dict(request.args)} | global_data: {global_data}"
+    )
 
     call_id = data.get("call_id", "unknown")
     conversation_history = data.get("conversation_history")
@@ -89,6 +108,8 @@ def post_call_summary():
         "call_id": call_id,
         "to": swml_call.get("to_number", data.get("to", "")),
         "from": swml_call.get("from_number", data.get("from", "")),
+        "sfdc_id": sfdc_id,
+        "account_name": account_name,
         "summary": summary,
         "raw": data
     }
