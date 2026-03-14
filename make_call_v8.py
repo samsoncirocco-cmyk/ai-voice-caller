@@ -208,7 +208,7 @@ def make_call(to_number, from_number, voice, prompt_path, static_greeting=None,
         "params": {
             "from": from_number,
             "to": to_number,
-            "max_duration": 90,       # Hard cap: 90 seconds. Prevents runaway calls.
+            "max_duration": 300,      # Hard cap: 5 minutes. 90s was too short — cut off mid-conversation. Runaway protection handled by end_call SWAIG + attention_timeout.
             # FIX 2026-03-09: AMD — detect voicemail vs. live human.
             # "DetectMessageEnd" waits for the beep, then lets the AI deliver voicemail script.
             # Without this, the AI had no idea it was talking to a voicemail system.
