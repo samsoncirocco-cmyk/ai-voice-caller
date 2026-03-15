@@ -145,7 +145,12 @@ def normalize_phone(raw):
 # ─── CSV Loading ─────────────────────────────────────────────────
 
 def load_leads(csv_path):
-    """Load leads from CSV, normalize phones, skip invalid."""
+    """Load leads from CSV, normalize phones, skip invalid.
+
+    Supports two CSV schemas:
+    - Legacy: phone, name, account, notes, sf_account_id
+    - Monday-pack: account_name, phone, state, call_type, talk_track
+    """
     leads = []
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
@@ -155,23 +160,38 @@ def load_leads(csv_path):
             if not phone:
                 continue
 
-            # Parse notes field for location and type
+            # Resolve account name — handle both CSV schemas
+            name = (
+                row.get("name", "").strip()
+                or row.get("account_name", "").strip()
+                or row.get("account", "").strip()
+            )
+            account = name  # same value, used interchangeably downstream
+
+            # Resolve state — use explicit state column if present, else parse notes
             notes = row.get("notes", "")
-            state = "South Dakota"  # default
+            state_raw = row.get("state", "").strip()
+            if state_raw:
+                state = state_raw
+            else:
+                state = "South Dakota"  # default
+                if "Iowa" in notes:
+                    state = "Iowa"
+                elif "Nebraska" in notes:
+                    state = "Nebraska"
+
+            # Resolve account type from notes or call_type column
+            call_type = row.get("call_type", "").lower()
             acct_type = "Education"  # default
-            if "Iowa" in notes:
-                state = "Iowa"
-            elif "Nebraska" in notes:
-                state = "Nebraska"
             if "Business" in notes:
                 acct_type = "Business Services"
-            elif "Government" in notes:
+            elif "Government" in notes or "gov" in call_type:
                 acct_type = "Government"
 
             leads.append({
                 "phone": phone,
-                "name": row.get("name", "").strip(),
-                "account": row.get("account", "").strip(),
+                "name": name,
+                "account": account,
                 "notes": notes,
                 "state": state,
                 "account_type": acct_type,
