@@ -2,8 +2,15 @@
 """
 campaign_runner_v2.py — Research-powered batch caller for Fortinet SLED outreach.
 
+MIGRATION NOTE (2026-03-14):
+  Updated to use the gateway-routed research_agent.py in this same directory.
+  Research inference now routes through the House AI LiteLLM gateway (Decision 013).
+  Circuit-breaker status is logged in the campaign summary — campaigns continue
+  with generic prompts if the gateway trips (Decision 003 / Decision 014).
+
 For each lead:
-  1. Research account via OpenRouter/Sonar (web-grounded intel)
+  1. Research account via LiteLLM gateway → perplexity/sonar → grok-3 fallback
+     (or direct OpenRouter/OpenAI if LITELLM_BASE_URL is not set — backward compat)
   2. Build personalized SWML with dynamic prompt
   3. Place call via SignalWire
   4. Wait for post_prompt webhook to capture summary
@@ -27,7 +34,8 @@ Usage:
 
 Requires:
   - SignalWire credentials in config/signalwire.json
-  - OPENROUTER_API_KEY and/or OPENAI_API_KEY in .env
+  - LITELLM_BASE_URL and LITELLM_VOICE_CALLER_KEY in .env  (gateway mode)
+    OR OPENROUTER_API_KEY in .env  (legacy mode — if gateway is not yet deployed)
   - webhook_server.py running on hooks.6eyes.dev
 
 Routing Rules (GSD - 2026-03-09):
@@ -51,10 +59,11 @@ from pathlib import Path
 
 import requests
 
-# Add parent to path for research_agent import
+# ─── Import gateway-routed research_agent ────────────────────────
+# Imports from THIS directory (execution/voice-caller/).
+# research_agent.py here is the migrated gateway version.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent / "execution"))
-from research_agent import research_account, build_dynamic_swml
+from research_agent import research_account, build_dynamic_swml, get_circuit_breaker_status
 
 # SmartRouter for intelligent vertical-based routing
 try:
@@ -195,9 +204,13 @@ def save_state(csv_path, state):
 
 
 # ─── Research Cache ──────────────────────────────────────────────
+# Note: L1/L2 caching is handled entirely inside research_account() in research_agent.py.
+# The legacy get_cached_research()/cache_research() functions below are retained
+# only for backward-compat with any external scripts that may call them directly.
+# New code should call research_account() directly.
 
 def get_cached_research(account_name):
-    """Check if we've already researched this account recently."""
+    """Check if we've already researched this account recently. LEGACY — prefer research_account()."""
     safe_name = re.sub(r"[^\w\-]", "_", account_name)[:80]
     cache_file = RESEARCH_CACHE_DIR / f"{safe_name}.json"
     if cache_file.exists():
@@ -224,7 +237,7 @@ def get_cached_research(account_name):
 
 
 def cache_research(account_name, context):
-    """Save research to cache."""
+    """Save research to cache. LEGACY — research_account() handles this automatically."""
     safe_name = re.sub(r"[^\w\-]", "_", account_name)[:80]
     cache_file = RESEARCH_CACHE_DIR / f"{safe_name}.json"
     context["_cached_at"] = datetime.now(timezone.utc).isoformat()
@@ -328,11 +341,31 @@ def append_pending_summary_stub(call_id, phone, account):
         f.write(json.dumps(stub) + "\n")
 
 
+def log_circuit_breaker_event(event: str, details: dict):
+    """Append circuit-breaker event to campaign log for post-campaign review."""
+    log_file = LOG_DIR / "campaign_log.jsonl"
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event": "circuit_breaker",
+        "cb_event": event,
+        **details,
+    }
+    with open(log_file, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
 # ─── Main Campaign Runner ───────────────────────────────────────
 
 def run_campaign(csv_path, args):
     leads = load_leads(csv_path)
     print(f"\nLoaded {len(leads)} leads from {csv_path}")
+
+    # Print gateway routing status at campaign start
+    cb_status = get_circuit_breaker_status()
+    if cb_status["gateway_enabled"]:
+        print(f"[gateway] Research routing: {cb_status['gateway_url']} (model: research-brain)")
+    else:
+        print("[legacy] Research routing: direct OpenRouter/OpenAI (LITELLM_BASE_URL not set)")
 
     state = load_state(csv_path) if args.resume else {
         "completed": [], "failed": [], "skipped": [], "last_index": -1
@@ -368,6 +401,9 @@ def run_campaign(csv_path, args):
             sys.exit(1)
 
     consecutive_failures = 0
+    # Track how many calls used generic context due to gateway issues
+    generic_context_count = 0
+    cb_tripped_at = None
 
     for i, lead in enumerate(remaining):
         global_index = leads.index(lead)
@@ -385,8 +421,7 @@ def run_campaign(csv_path, args):
         print(f"  State: {lead['state']} | Type: {lead['account_type']}")
 
         # Step 1: Research — L1 (local) + L2 (BigQuery) caching handled inside research_account().
-        # Legacy get_cached_research()/cache_research() removed: they keyed by account_name only,
-        # which bypassed the stable sf_account_id key and shadowed BigQuery hits.
+        # Gateway circuit-breaker is also tracked inside research_account() / research_via_gateway().
         context = research_account(
             lead["account"], lead["state"], lead["account_type"],
             sf_account_id=lead.get("sf_account_id", ""),
@@ -394,6 +429,23 @@ def run_campaign(csv_path, args):
 
         context_source = context.get("_source", "unknown")
         print(f"  Hook: {context.get('hook_1', 'N/A')[:80]}")
+
+        # Track generic-context usage (indicates gateway issues)
+        if context_source == "generic_fallback":
+            generic_context_count += 1
+            cb_current = get_circuit_breaker_status()
+            if cb_current["tripped"] and cb_tripped_at is None:
+                cb_tripped_at = datetime.now(timezone.utc).isoformat()
+                log_circuit_breaker_event("tripped", {
+                    "account": lead["account"],
+                    "consecutive_failures": cb_current["consecutive_failures"],
+                    "gateway_url": cb_current["gateway_url"],
+                })
+                print(
+                    f"\n  ⚠️  [campaign] Gateway circuit breaker tripped. "
+                    f"This and remaining calls will use generic prompts. "
+                    f"Campaign continues — investigate gateway after run."
+                )
 
         if args.dry_run:
             print(f"  [DRY RUN] Would call {lead['phone']} with personalized prompt")
@@ -450,9 +502,9 @@ def run_campaign(csv_path, args):
         state["last_index"] = global_index
         save_state(csv_path, state)
 
-        # Circuit breaker
+        # Circuit breaker (SignalWire call failures — separate from research gateway CB)
         if consecutive_failures >= 3:
-            print(f"\n🛑 {consecutive_failures} consecutive failures. Pausing 5 min...")
+            print(f"\n🛑 {consecutive_failures} consecutive SignalWire call failures. Pausing 5 min...")
             time.sleep(300)
             consecutive_failures = 0
 
@@ -471,6 +523,7 @@ def run_campaign(csv_path, args):
                 print(f"  [warn] Could not log call cost for {call_id_for_cost}: {exc}")
 
     # Summary
+    final_cb = get_circuit_breaker_status()
     print(f"\n{'='*60}")
     print("CAMPAIGN SUMMARY")
     print(f"  Completed: {len(state['completed'])}")
@@ -479,6 +532,16 @@ def run_campaign(csv_path, args):
     print(f"  State saved to: {get_state_file(csv_path)}")
     print(f"  Call log: {LOG_DIR / 'campaign_log.jsonl'}")
     print(f"  Summaries: {LOG_DIR / 'call_summaries.jsonl'}")
+    print(f"\n  Research Gateway Status:")
+    print(f"    Gateway enabled: {final_cb['gateway_enabled']}")
+    if final_cb["gateway_enabled"]:
+        print(f"    Gateway URL: {final_cb['gateway_url']}")
+        print(f"    Circuit breaker tripped: {final_cb['tripped']}")
+        if final_cb["tripped"]:
+            print(f"    ⚠️  Tripped at: {cb_tripped_at}")
+        print(f"    Calls with generic context: {generic_context_count}")
+        if generic_context_count > 0:
+            print(f"    ⚠️  ACTION NEEDED: Check gateway health before next campaign run.")
 
 
 # ─── SmartRouter-based Campaign Runner ──────────────────────────
@@ -486,16 +549,23 @@ def run_campaign(csv_path, args):
 def run_campaign_db(args):
     """
     Run campaign using SmartRouter with accounts.db (default routing layer).
-    
+
     This is the primary mode — uses intelligent routing based on vertical
     classification with GSD-defined rules:
       - K-12         → +16028985026 + paul.txt
-      - Municipal/Gov→ +16028985026 + paul.txt  
+      - Municipal/Gov→ +16028985026 + paul.txt
       - Unknown/Cold → +14806024668 + cold_outreach.txt
     """
     if SmartRouter is None:
         print("Error: SmartRouter not available. Install execution/smart_router.py")
         sys.exit(1)
+
+    # Print gateway routing status at campaign start
+    cb_status = get_circuit_breaker_status()
+    if cb_status["gateway_enabled"]:
+        print(f"[gateway] Research routing: {cb_status['gateway_url']} (model: research-brain)")
+    else:
+        print("[legacy] Research routing: direct OpenRouter/OpenAI (LITELLM_BASE_URL not set)")
 
     # Pre-campaign safety check — verify webhook server is reachable before dialing anyone
     if not args.dry_run:
@@ -509,12 +579,12 @@ def run_campaign_db(args):
             print("❌ ABORT: hooks-server is unreachable. Post-call summaries would not be captured.")
             print("   Fix: pm2 restart hooks-server, then retry.")
             sys.exit(1)
-    
+
     router = SmartRouter(
         db_path=args.db,
         bypass_time_windows=args.bypass_time_windows,
     )
-    
+
     print(f"\n{'='*60}")
     print("SMART ROUTER MODE")
     print(f"  Database: {args.db}")
@@ -531,19 +601,21 @@ def run_campaign_db(args):
     for vertical, prompt in VERTICAL_PROMPTS.items():
         print(f"    {vertical:12} → {prompt}")
     print(f"{'='*60}\n")
-    
+
     # Get DB stats
     stats = router.db.get_stats()
     print(f"Account status: {json.dumps(stats, indent=2)}")
-    
+
     calls_made = 0
     # SAFETY 2026-03-09: Hard cap at 50 calls if no --limit provided.
     # Previous default was 999999 — could call entire account list uncontrolled.
     calls_limit = args.limit or 50
     consecutive_failures = 0
-    
+
     results_by_vertical = {}
-    
+    generic_context_count = 0
+    cb_tripped_at = None
+
     while calls_made < calls_limit:
         # Business hours check
         if args.business_hours and not args.dry_run:
@@ -551,27 +623,27 @@ def run_campaign_db(args):
                 wait = seconds_until_business_hours()
                 print(f"\n⏸  Outside business hours. Pausing {wait//3600:.1f}h until 8am Central...")
                 time.sleep(wait)
-        
+
         # Get next call from SmartRouter
         routing = router.get_next_call(f"campaign-runner-{os.getpid()}")
-        
+
         if routing is None:
             print("\n✓ No more callable accounts (all filtered by time windows or completed)")
             break
-        
+
         account = routing["account"]
         vertical = routing["vertical"]
         prompt_file = routing["prompt_file"]
         voice = routing["voice"]
         reason = routing["reason"]
-        
+
         # Apply state-based routing for local presence + vertical prompt selection
         account_state = account.get("state", "")
         from_number = select_from_number(account_state)
         gsd_prompt = VERTICAL_PROMPTS.get(vertical, VERTICAL_PROMPTS["other"])
-        
+
         calls_made += 1
-        
+
         print(f"\n{'─'*60}")
         print(f"[{calls_made}/{args.limit or '∞'}] {account['account_name']}")
         print(f"  Phone:    {account['phone']}")
@@ -579,12 +651,12 @@ def run_campaign_db(args):
         print(f"  From:     {from_number}")
         print(f"  Prompt:   {gsd_prompt}")
         print(f"  Reason:   {reason}")
-        
+
         # Track by vertical for summary
         if vertical not in results_by_vertical:
             results_by_vertical[vertical] = {"attempted": 0, "success": 0, "failed": 0}
         results_by_vertical[vertical]["attempted"] += 1
-        
+
         if args.dry_run:
             print(f"  [DRY RUN] Would call {account['phone']} via SmartRouter")
             # Complete the call as no_answer so it doesn't block next run
@@ -596,7 +668,7 @@ def run_campaign_db(args):
             )
             results_by_vertical[vertical]["success"] += 1
             continue
-        
+
         # Research account
         context = research_account(
             account["account_name"],
@@ -606,7 +678,24 @@ def run_campaign_db(args):
         )
         context_source = context.get("_source", "unknown")
         print(f"  Research: {context_source} | Hook: {context.get('hook_1', 'N/A')[:60]}")
-        
+
+        # Track generic-context usage (indicates gateway issues)
+        if context_source == "generic_fallback":
+            generic_context_count += 1
+            cb_current = get_circuit_breaker_status()
+            if cb_current["tripped"] and cb_tripped_at is None:
+                cb_tripped_at = datetime.now(timezone.utc).isoformat()
+                log_circuit_breaker_event("tripped", {
+                    "account": account["account_name"],
+                    "consecutive_failures": cb_current["consecutive_failures"],
+                    "gateway_url": cb_current["gateway_url"],
+                })
+                print(
+                    f"\n  ⚠️  [campaign] Gateway circuit breaker tripped. "
+                    f"Remaining calls will use generic prompts. "
+                    f"Campaign continues — investigate gateway after run."
+                )
+
         # Build SWML with GSD-routed prompt
         # FIX 2026-03-13: Embed sfdc_id as URL query param in post_prompt_url.
         # SignalWire does NOT echo back global_data in post_prompt_url callbacks,
@@ -626,7 +715,7 @@ def run_campaign_db(args):
         global_data["sfdc_id"] = _sfdc_id
         global_data["account_name"] = _acct_name
         swml["global_data"] = global_data
-        
+
         # Place call with GSD-routed from_number
         print(f"  Calling {account['phone']}...")
         balance_before = None
@@ -661,20 +750,20 @@ def run_campaign_db(args):
             )
             results_by_vertical[vertical]["failed"] += 1
             consecutive_failures += 1
-        
+
         # Log
         log_call_attempt(
             {"phone": account["phone"], "account": account["account_name"]},
             result,
             context_source,
         )
-        
-        # Circuit breaker
+
+        # Circuit breaker (SignalWire call failures — separate from research gateway CB)
         if consecutive_failures >= 3:
-            print(f"\n🛑 {consecutive_failures} consecutive failures. Pausing 5 min...")
+            print(f"\n🛑 {consecutive_failures} consecutive SignalWire call failures. Pausing 5 min...")
             time.sleep(300)
             consecutive_failures = 0
-        
+
         # Pacing
         if calls_made < calls_limit:
             jitter = args.interval * 0.2
@@ -688,17 +777,28 @@ def run_campaign_db(args):
                 cost_tracker.log_call_cost(call_id_for_cost, balance_before, balance_after)
             except Exception as exc:
                 print(f"  [warn] Could not log call cost for {call_id_for_cost}: {exc}")
-    
+
     # Summary
+    final_cb = get_circuit_breaker_status()
     print(f"\n{'='*60}")
     print("SMART ROUTER CAMPAIGN SUMMARY")
     print(f"  Total calls: {calls_made}")
     print(f"\n  Results by vertical:")
     for vert, counts in results_by_vertical.items():
         print(f"    {vert:12}: {counts['attempted']} attempted, {counts['success']} success, {counts['failed']} failed")
+    print(f"\n  Research Gateway Status:")
+    print(f"    Gateway enabled: {final_cb['gateway_enabled']}")
+    if final_cb["gateway_enabled"]:
+        print(f"    Gateway URL: {final_cb['gateway_url']}")
+        print(f"    Circuit breaker tripped: {final_cb['tripped']}")
+        if final_cb["tripped"]:
+            print(f"    ⚠️  Tripped at: {cb_tripped_at}")
+        print(f"    Calls with generic context: {generic_context_count}")
+        if generic_context_count > 0:
+            print(f"    ⚠️  ACTION NEEDED: Check gateway health before next campaign run.")
     print(f"\n  Call log: {LOG_DIR / 'campaign_log.jsonl'}")
     print(f"{'='*60}")
-    
+
     return results_by_vertical
 
 
@@ -707,14 +807,14 @@ def run_campaign_db(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Research-powered campaign caller for Fortinet SLED")
     parser.add_argument("csv_file", nargs="?", default=None, help="Path to leads CSV (legacy mode)")
-    parser.add_argument("--db", default=None, 
+    parser.add_argument("--db", default=None,
                         help="Path to accounts.db (SmartRouter mode - recommended)")
     parser.add_argument("--dry-run", action="store_true", help="Research only, no calls")
     parser.add_argument("--limit", type=int, default=None, help="Max calls to make")
     parser.add_argument("--interval", type=int, default=240, help="Seconds between calls (default: 240 = 4 min)")
     parser.add_argument("--resume", action="store_true", help="Resume from last position (CSV mode only)")
     parser.add_argument("--business-hours", action="store_true", help="Only call 8am-4pm Central")
-    parser.add_argument("--bypass-time-windows", action="store_true", 
+    parser.add_argument("--bypass-time-windows", action="store_true",
                         help="Ignore SmartRouter time-of-day rules (for testing)")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Prompt file path (CSV mode; SmartRouter uses GSD rules)")
     parser.add_argument("--voice", default=DEFAULT_VOICE, help="TTS voice (default: openai.onyx)")

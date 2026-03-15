@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 """
-research_agent.py — Pre-call account research using OpenRouter → Perplexity Sonar.
+research_agent.py — Pre-call account research routed through the House AI Gateway.
 
-Researches each account before Paul calls, generating personalized context,
-opening hooks, and objection handlers. Feeds directly into build_dynamic_swml().
+MIGRATION NOTE (2026-03-14):
+  This is the gateway-routed version. Inference is routed through LiteLLM at
+  LITELLM_BASE_URL using virtual key LITELLM_VOICE_CALLER_KEY and model alias
+  `research-brain` (perplexity/sonar → grok-3 fallback, configured in gateway
+  config.yaml). Decision 013: this is the ONLY file with direct AI API calls.
 
-Supports fallback to OpenAI if OpenRouter is unavailable.
+  Backward compatibility: if LITELLM_BASE_URL is not set, falls back to the
+  original direct OpenRouter + OpenAI path so migration can be gradual.
+
+  Circuit breaker: 3 consecutive non-200 gateway responses within this process
+  trip the breaker — subsequent calls use generic context instead of hitting
+  the gateway. The campaign continues without interruption.
 
 Usage:
   # Research a single account
@@ -16,7 +24,11 @@ Usage:
   context = research_account("Tripp-Delmont School District", "South Dakota", "Education")
   swml = build_dynamic_swml(context)
 
-Requires:
+Requires (gateway mode — preferred):
+  LITELLM_BASE_URL=http://<gateway-tailscale-ip>:4000
+  LITELLM_VOICE_CALLER_KEY=sk-...  (virtual key provisioned in LiteLLM)
+
+Requires (legacy fallback mode — used if LITELLM_BASE_URL is unset):
   OPENROUTER_API_KEY in .env or environment
   OPENAI_API_KEY in .env or environment (fallback)
 """
@@ -47,16 +59,69 @@ def load_env():
 
 load_env()
 
+# ─── Gateway Config (primary) ────────────────────────────────────
+
+# LiteLLM gateway endpoint. Set to Tailscale IP of the M4 Mini gateway.
+# Example: http://100.x.x.x:4000
+LITELLM_BASE_URL       = os.environ.get("LITELLM_BASE_URL", "").rstrip("/")
+LITELLM_VOICE_CALLER_KEY = os.environ.get("LITELLM_VOICE_CALLER_KEY", "")
+
+# Model alias — gateway routes `research-brain` → perplexity/sonar → grok-3 fallback
+GATEWAY_MODEL  = "research-brain"
+GATEWAY_URL    = f"{LITELLM_BASE_URL}/chat/completions" if LITELLM_BASE_URL else ""
+
+# Whether gateway mode is active (both vars must be set)
+GATEWAY_ENABLED = bool(LITELLM_BASE_URL and LITELLM_VOICE_CALLER_KEY)
+
+# ─── Legacy Config (fallback when LITELLM_BASE_URL is unset) ─────
+
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_API_KEY     = os.environ.get("OPENAI_API_KEY", "")
 
 # OpenRouter model: Perplexity Sonar (web-grounded, ~$1/1M tokens)
 OPENROUTER_MODEL = "perplexity/sonar"
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_URL   = "https://openrouter.ai/api/v1/chat/completions"
 
-# Fallback: OpenAI (no web grounding, but good for structured output)
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+# Fallback: OpenAI-compatible endpoint (configured for xAI Grok)
+OPENAI_URL   = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL = "grok-4-fast-non-reasoning"  # xAI grok-4-fast-non-reasoning via OPENAI_BASE_URL=https://api.x.ai/v1
+
+# ─── Circuit Breaker (module-level, per-process) ─────────────────
+# Tracks consecutive gateway failures. After CIRCUIT_BREAKER_THRESHOLD failures,
+# _gateway_tripped = True and all remaining calls in this process use generic context.
+# Resets to 0 on any successful gateway call.
+
+CIRCUIT_BREAKER_THRESHOLD = 3
+
+_gateway_consecutive_failures: int = 0
+_gateway_tripped: bool = False
+
+
+def _cb_record_success():
+    """Record a successful gateway call — resets consecutive failure count."""
+    global _gateway_consecutive_failures, _gateway_tripped
+    _gateway_consecutive_failures = 0
+    # Note: once tripped, we do NOT automatically un-trip within the same run.
+    # The operator should investigate and restart the campaign process.
+
+
+def _cb_record_failure():
+    """Record a gateway failure. Returns True if the breaker just tripped."""
+    global _gateway_consecutive_failures, _gateway_tripped
+    _gateway_consecutive_failures += 1
+    if _gateway_consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD and not _gateway_tripped:
+        _gateway_tripped = True
+        print(
+            f"\n⚡ [circuit-breaker] TRIPPED after {_gateway_consecutive_failures} consecutive"
+            f" gateway failures. Remaining research calls in this run will use generic context."
+            f" Restart the campaign process once the gateway is healthy."
+        )
+        return True
+    return False
+
+
+def _cb_is_tripped() -> bool:
+    return _gateway_tripped
 
 
 # ─── Research Prompt ─────────────────────────────────────────────
@@ -96,10 +161,85 @@ Do NOT invent contacts — only include people you found in a real source with a
 Focus on publicly available information. If you can't find specific details, make reasonable inferences based on the organization type and location. Be factual, not speculative."""
 
 
-# ─── Research Functions ──────────────────────────────────────────
+# ─── Gateway Research Function ────────────────────────────────────
+
+def research_via_gateway(account_name, state, account_type):
+    """
+    Route research through the House AI LiteLLM gateway.
+    Uses model alias `research-brain` — gateway handles Sonar → Grok-3 fallback.
+    Updates circuit-breaker state on success/failure.
+    Returns parsed dict on success, None on any failure.
+    """
+    if not GATEWAY_ENABLED:
+        return None
+
+    if _cb_is_tripped():
+        # Breaker already tripped — don't even try
+        return None
+
+    prompt = RESEARCH_PROMPT.format(
+        account_name=account_name, state=state, account_type=account_type
+    )
+
+    try:
+        response = requests.post(
+            GATEWAY_URL,
+            headers={
+                "Authorization": f"Bearer {LITELLM_VOICE_CALLER_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": GATEWAY_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a B2B sales research assistant. Return only valid JSON, no markdown formatting."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.3,
+                "max_tokens": 800
+            },
+            timeout=90  # sonar can be slow; matches gateway config.yaml timeout
+        )
+
+        if response.status_code != 200:
+            print(
+                f"  [research] Gateway returned {response.status_code}: "
+                f"{response.text[:200]}"
+            )
+            _cb_record_failure()
+            return None
+
+        content = response.json()["choices"][0]["message"]["content"]
+        result = parse_research_json(content)
+        if result:
+            _cb_record_success()
+            return result
+        else:
+            # Parsed but invalid JSON from model — still counts as failure
+            _cb_record_failure()
+            return None
+
+    except requests.exceptions.ConnectionError as e:
+        print(f"  [research] Gateway unreachable ({LITELLM_BASE_URL}): {e}")
+        _cb_record_failure()
+        return None
+    except requests.exceptions.Timeout:
+        print(f"  [research] Gateway timed out after 90s")
+        _cb_record_failure()
+        return None
+    except Exception as e:
+        print(f"  [research] Gateway call failed: {e}")
+        _cb_record_failure()
+        return None
+
+
+# ─── Legacy Research Functions (fallback when LITELLM_BASE_URL unset) ──
 
 def research_via_openrouter(account_name, state, account_type):
-    """Research account using OpenRouter → Perplexity Sonar (web-grounded)."""
+    """Research account using OpenRouter → Perplexity Sonar (web-grounded).
+    LEGACY PATH — only used when LITELLM_BASE_URL is not configured."""
     if not OPENROUTER_API_KEY:
         return None
 
@@ -133,7 +273,8 @@ def research_via_openrouter(account_name, state, account_type):
 
 
 def research_via_openai(account_name, state, account_type):
-    """Fallback: research using OpenAI (no web grounding)."""
+    """Fallback: research using OpenAI (no web grounding).
+    LEGACY PATH — only used when LITELLM_BASE_URL is not configured."""
     if not OPENAI_API_KEY:
         return None
 
@@ -183,6 +324,8 @@ def parse_research_json(content):
         print(f"  [research] Failed to parse JSON: {content[:200]}...")
         return None
 
+
+# ─── BigQuery Cache (L2) ─────────────────────────────────────────
 
 BQ_PROJECT   = "tatt-pro"
 BQ_DATASET   = "sled_intelligence"
@@ -335,16 +478,27 @@ def _bq_push(result: dict) -> None:
         print(f"  [research] BQ L2 push failed (non-fatal): {e}")
 
 
+# ─── Core Research Function ───────────────────────────────────────
+
 def research_account(account_name, state, account_type="Education", sf_account_id=""):
     """
-    Research an account using best available AI provider.
-    Returns dict with summary, hooks, pain points, contacts, etc.
-    Falls back gracefully if APIs are unavailable.
+    Research an account using the House AI Gateway (primary) or direct API (legacy fallback).
+
+    Gateway mode (LITELLM_BASE_URL set):
+      → requests.post(LITELLM_BASE_URL/chat/completions, model=research-brain)
+      → gateway routes: perplexity/sonar → grok-3 fallback (Decision 003)
+      → circuit-breaker trips after 3 consecutive non-200 responses (Decision 014)
+
+    Legacy mode (LITELLM_BASE_URL unset):
+      → OpenRouter (Perplexity Sonar) → OpenAI (xAI Grok) fallback
+
+    Last resort (all providers fail, or circuit-breaker tripped):
+      → generic context — campaign continues with non-personalized prompts
 
     Cache hierarchy (never blocks calling on failure):
       L1 — local  campaigns/.research_cache/{key}.json  TTL: 7 days
-      L2 — Drive  gdrive:paul-workspace/research-cache/  TTL: 30 days
-      MISS — call Perplexity Sonar → write L1 + L2
+      L2 — BigQuery sled_intelligence.research_cache     TTL: 30 days
+      MISS — call inference provider → write L1 + L2
 
     Cache key: sf_account_id (preferred) or state__normalized_name (collision-safe).
     TTL evaluated from JSON's _cached_at field, not filesystem timestamp.
@@ -387,7 +541,7 @@ def research_account(account_name, state, account_type="Education", sf_account_i
             pass
         return bq_data
 
-    # --- MISS: call Sonar ---
+    # --- MISS: run inference ---
     print(f"  [research] Cache miss — researching: {account_name} ({state}, {account_type})")
 
     def _cache_and_return(result):
@@ -407,23 +561,46 @@ def research_account(account_name, state, account_type="Education", sf_account_i
         _bq_push(result)
         return result
 
-    # Try OpenRouter (Perplexity Sonar) first — web-grounded
-    result = research_via_openrouter(account_name, state, account_type)
-    if result:
-        result["_source"] = "openrouter/sonar"
-        print(f"  [research] Got context via Sonar: {result.get('summary', '')[:80]}...")
-        return _cache_and_return(result)
+    # ── Gateway path (preferred when LITELLM_BASE_URL is set) ──────
+    if GATEWAY_ENABLED:
+        if _cb_is_tripped():
+            print(
+                f"  [research] ⚡ Circuit breaker tripped — skipping gateway,"
+                f" using generic context for {account_name}"
+            )
+        else:
+            result = research_via_gateway(account_name, state, account_type)
+            if result:
+                result["_source"] = "gateway/research-brain"
+                print(f"  [research] Got context via gateway: {result.get('summary', '')[:80]}...")
+                return _cache_and_return(result)
+            # Gateway failed; circuit-breaker already updated inside research_via_gateway()
+            if _cb_is_tripped():
+                print(
+                    f"  [research] ⚡ Circuit breaker just tripped — remaining calls this run"
+                    f" will use generic context."
+                )
+        # Fall through to generic context (no legacy API fallback when gateway is configured
+        # but failing — Decision 008: all keys live in the gateway, not locally)
 
-    # Fallback to OpenAI
-    result = research_via_openai(account_name, state, account_type)
-    if result:
-        result["_source"] = "openai/gpt-4o-mini"
-        print(f"  [research] Got context via OpenAI: {result.get('summary', '')[:80]}...")
-        return _cache_and_return(result)
+    # ── Legacy path (only when LITELLM_BASE_URL is NOT configured) ─
+    elif not GATEWAY_ENABLED:
+        # Try OpenRouter (Perplexity Sonar) first — web-grounded
+        result = research_via_openrouter(account_name, state, account_type)
+        if result:
+            result["_source"] = "openrouter/sonar"
+            print(f"  [research] Got context via Sonar: {result.get('summary', '')[:80]}...")
+            return _cache_and_return(result)
 
-    # Last resort: generic context — still goes through _cache_and_return so
-    # L1/L2 are populated and metadata fields are consistent with the normal path.
-    print(f"  [research] All providers failed, using generic context")
+        # Fallback to OpenAI / xAI Grok
+        result = research_via_openai(account_name, state, account_type)
+        if result:
+            result["_source"] = "openai/gpt-4o-mini"
+            print(f"  [research] Got context via OpenAI: {result.get('summary', '')[:80]}...")
+            return _cache_and_return(result)
+
+    # ── Last resort: generic context — campaign keeps running ───────
+    print(f"  [research] All providers failed, using generic context for {account_name}")
     result = {
         "summary": f"{account_name} is a {account_type.lower()} organization in {state}.",
         "contacts": [],
@@ -440,6 +617,19 @@ def research_account(account_name, state, account_type="Education", sf_account_i
         "_source": "generic_fallback"
     }
     return _cache_and_return(result)
+
+
+# ─── Circuit Breaker Status (for campaign_runner_v2 to inspect) ──
+
+def get_circuit_breaker_status() -> dict:
+    """Return current circuit breaker state for campaign-level logging."""
+    return {
+        "tripped": _gateway_tripped,
+        "consecutive_failures": _gateway_consecutive_failures,
+        "threshold": CIRCUIT_BREAKER_THRESHOLD,
+        "gateway_enabled": GATEWAY_ENABLED,
+        "gateway_url": GATEWAY_URL or "(none — legacy mode)",
+    }
 
 
 # ─── Contact Helpers ─────────────────────────────────────────────
@@ -516,6 +706,10 @@ def build_dynamic_swml(context, base_prompt_path="prompts/paul.txt",
     """
     Build SWML with per-call context prepended to an existing prompt file.
     Works with prompts/paul.txt, prompts/cold_outreach.txt, or any prompt file.
+
+    NOTE: SignalWire SWML ai_model, asr_engine, voice, and all SignalWire params
+    are intentionally NOT routed through the LiteLLM gateway (Decision 002).
+    These are SignalWire-managed inference — separate billing, separate control plane.
     """
     # Load base prompt
     full_path = Path(__file__).resolve().parent / base_prompt_path
@@ -588,6 +782,8 @@ def build_dynamic_swml(context, base_prompt_path="prompts/paul.txt",
                         "params": {
                             # FIX 2026-03-03: wait_for_user defaults to True on outbound calls.
                             # Without these params, agent waits for remote party to speak → silence.
+                            # NOTE: ai_model is SignalWire's parameter — NOT routable through our gateway
+                            # (Decision 002). SignalWire runs this on their own infrastructure.
                             "ai_model": "gpt-4.1-nano",
                             "direction": "outbound",
                             "wait_for_user": False,
@@ -620,13 +816,23 @@ if __name__ == "__main__":
     state = sys.argv[2]
     acct_type = sys.argv[3] if len(sys.argv) > 3 else "Education"
 
+    # Print routing info
+    if GATEWAY_ENABLED:
+        print(f"[gateway] Routing through: {GATEWAY_URL}")
+        print(f"[gateway] Model alias: {GATEWAY_MODEL}")
+    else:
+        print("[legacy] LITELLM_BASE_URL not set — using direct OpenRouter/OpenAI")
+
     context = research_account(account, state, acct_type)
     print("\n=== RESEARCH RESULT ===")
     print(json.dumps(context, indent=2))
 
+    print("\n=== CIRCUIT BREAKER STATUS ===")
+    print(json.dumps(get_circuit_breaker_status(), indent=2))
+
     print("\n=== GENERATED SWML PROMPT (first 500 chars) ===")
     swml = build_dynamic_swml(context)
-    # main[0] is now {"answer": {}}, main[1] is the ai block
+    # main[0] is now {"answer": {}}, main[2] is the ai block
     ai_block = next(s for s in swml["sections"]["main"] if "ai" in s)
     prompt = ai_block["ai"]["prompt"]["text"]
     print(prompt[:500])
