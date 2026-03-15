@@ -130,15 +130,47 @@ def build_inbound_swml(from_number: str, to_number: str) -> Dict:
     state = NUMBER_TO_STATE.get(to_number, "")
     caller_context = lookup_caller(from_number)
 
-    # Build dynamic prompt based on whether we recognize the caller
-    if caller_context and caller_context.get("account_name"):
-        account = caller_context["account_name"]
+    # Build dynamic prompt based on whether we recognize the caller.
+    # Use context whenever we have ANY history — account name is often blank
+    # for outbound calls but summary/contact_name may still be populated.
+    has_context = bool(
+        caller_context
+        and (
+            caller_context.get("account_name")
+            or caller_context.get("contact_name")
+            or caller_context.get("previous_summary")
+        )
+    )
+
+    if has_context:
+        account = caller_context.get("account_name", "")
         contact = caller_context.get("contact_name", "")
+        prev_summary = caller_context.get("previous_summary", "")
+
+        # Try to pull org from summary when account_name is empty
+        if not account and prev_summary:
+            org_match = re.search(
+                r"organization[:\s]+([^\n\-,\.]+)", prev_summary, re.IGNORECASE
+            )
+            if org_match:
+                account = org_match.group(1).strip()
+                if account.lower() in ("unknown", "none", "n/a"):
+                    account = ""
+
+        # Build a compact context snippet (avoid stuffing full summary)
+        context_parts = []
+        if contact:
+            context_parts.append(f"We previously spoke with {contact}.")
+        if account:
+            context_parts.append(f"They work at {account}.")
+        context_parts.append("We called them recently as part of Fortinet outreach.")
+        context_str = " ".join(context_parts)
+
         greeting_context = (
-            f"CALLER CONTEXT: This person is calling back from {account}. "
-            f"{'Their name is ' + contact + '. ' if contact else ''}"
-            f"We called them recently as part of Fortinet outreach. "
-            f"Be warm and acknowledge they're returning our call."
+            f"CALLER CONTEXT: This person is calling back — we have prior history. "
+            f"{context_str} "
+            f"Be warm and acknowledge they're returning our call. "
+            f"Don't recite their details back to them; just be welcoming."
         )
     else:
         greeting_context = (
