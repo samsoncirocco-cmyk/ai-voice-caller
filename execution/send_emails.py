@@ -307,7 +307,7 @@ def cmd_outlook_draft(silent: bool = False) -> dict:
     Safe for cron — no interactive prompts, no real sending.
     Returns a summary dict for cron logging.
     """
-    BRIDGE_URL   = "http://192.168.0.127:8899/draft"
+    BRIDGE_URL   = "http://192.168.0.109:8899/draft"
     BRIDGE_TOKEN = "outlook-bridge-2026"
 
     try:
@@ -331,7 +331,7 @@ def cmd_outlook_draft(silent: bool = False) -> dict:
     # Health-check the bridge first (fail fast if work machine is offline)
     try:
         health = _req.get(
-            "http://192.168.0.127:8899/health",
+            "http://192.168.0.109:8899/health",
             headers={"X-Bridge-Token": BRIDGE_TOKEN},
             timeout=5,
         )
