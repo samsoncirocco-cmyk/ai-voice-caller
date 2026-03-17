@@ -27,14 +27,17 @@ SF_ALIAS = "fortinet"
 BUSINESS_TZ = "America/Phoenix"
 
 OUTCOME_SUBJECTS = {
-    "interested":    "Call",
-    "voicemail":     "Voicemail",
-    "not_interested":"Not Interested",
-    "no_answer":     "Call",
-    "callback":      "Call",
-    "meeting":       "Meeting",
-    "completed":     "Call",
-    "referral":      "Referral",
+    "interested":      "Call",
+    "connected":       "Call",
+    "voicemail":       "Voicemail",
+    "not_interested":  "Not Interested",
+    "no_answer":       "Call",
+    "callback":        "Call",
+    "meeting":         "Meeting",
+    "meeting_booked":  "Meeting",
+    "completed":       "Call",
+    "referral":        "Referral",
+    "wrong_number":    "Call",
 }
 
 
