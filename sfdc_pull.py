@@ -115,7 +115,13 @@ def _auth_ok() -> bool:
 # ── Phone / state normalisation ───────────────────────────────────────────────
 
 def _normalize_state(raw: Optional[str]) -> str:
-    return (raw or "").strip().upper()
+    """Normalize state to 2-letter abbreviation. SFDC stores full names."""
+    _MAP = {
+        "IOWA": "IA", "NEBRASKA": "NE", "SOUTH DAKOTA": "SD",
+        "MINNESOTA": "MN", "WISCONSIN": "WI", "NORTH DAKOTA": "ND",
+    }
+    val = (raw or "").strip().upper()
+    return _MAP.get(val, val)  # Return mapped abbrev or passthrough if already abbrev
 
 
 def _normalize_phone_e164(raw: Optional[str]) -> Optional[str]:
@@ -479,7 +485,7 @@ def run_sync(states: List[str], db_path: Optional[str] = None, dry_run: bool = F
     if dry_run:
         print(f"[DRY RUN] Would upsert {len(records)} account(s) into {_db_path}")
         for rec in records:
-            phone = _normalize_phone_digits(rec.get("Phone"))
+            phone = _normalize_phone_e164(rec.get("Phone"))
             name = rec.get("Name") or ""
             state = _normalize_state(rec.get("BillingState"))
             print(f"   {name[:50]:<52} {state}  {phone}")
@@ -491,7 +497,7 @@ def run_sync(states: List[str], db_path: Optional[str] = None, dry_run: bool = F
         conn.execute("BEGIN IMMEDIATE")
 
         for rec in records:
-            phone = _normalize_phone_digits(rec.get("Phone"))
+            phone = _normalize_phone_e164(rec.get("Phone"))
             name = rec.get("Name") or ""
             state = _normalize_state(rec.get("BillingState"))
             vertical = _map_vertical(rec.get("Industry") or rec.get("Type") or "")
@@ -553,7 +559,7 @@ def run_sync(states: List[str], db_path: Optional[str] = None, dry_run: bool = F
                 lname = ref.get("LastName") or ""
                 acct_info = ref.get("Account") or {}
                 org = acct_info.get("Name") if isinstance(acct_info, dict) else ""
-                phone = _normalize_phone_digits(ref.get("Phone"))
+                phone = _normalize_phone_e164(ref.get("Phone"))
                 lead = ref.get("LeadSource") or ""
                 print(f"  [DRY RUN] {fname} {lname} @ {org or '—'}  phone={phone}  source={lead}")
                 ref_counts["skipped"] += 1
@@ -564,7 +570,7 @@ def run_sync(states: List[str], db_path: Optional[str] = None, dry_run: bool = F
             conn.execute("BEGIN IMMEDIATE")
 
             for ref in ref_records:
-                phone = _normalize_phone_digits(ref.get("Phone"))
+                phone = _normalize_phone_e164(ref.get("Phone"))
                 fname = ref.get("FirstName") or ""
                 lname = ref.get("LastName") or ""
                 contact_name = f"{fname} {lname}".strip()
