@@ -153,14 +153,20 @@ def _map_vertical(industry: str) -> str:
 
 
 def _state_variants(states: List[str]) -> List[str]:
-    """Return upper/lower/title variants for each state abbrev."""
+    """Return abbreviation + full name variants for each state.
+    SFDC stores BillingState as full name ('Iowa', 'Nebraska', 'South Dakota').
+    """
+    _ABBREV_TO_FULL = {
+        "IA": "Iowa", "NE": "Nebraska", "SD": "South Dakota",
+        "MN": "Minnesota", "WI": "Wisconsin", "ND": "North Dakota",
+    }
     variants: List[str] = []
     seen: set = set()
     for s in states:
         s = s.strip()
         if not s:
             continue
-        for v in [s.upper(), s.lower(), s.title()]:
+        for v in [s.upper(), _ABBREV_TO_FULL.get(s.upper(), s.title())]:
             if v not in seen:
                 seen.add(v)
                 variants.append(v)
@@ -177,6 +183,7 @@ def _build_soql_csv(states: List[str]) -> str:
         "FROM Account "
         "WHERE Phone != null "
         f"AND BillingState IN ({state_list}) "
+        "AND OwnerId = '005Hr00000INgbqIAD' "
         "AND IsDeleted = false "
         "ORDER BY Name"
     )
@@ -199,6 +206,7 @@ def _build_soql_inactive(states: List[str], cutoff_date: str) -> str:
         "FROM Account "
         "WHERE Phone != null "
         f"AND BillingState IN ({state_list}) "
+        "AND OwnerId = '005Hr00000INgbqIAD' "
         "AND IsDeleted = false "
         f"AND (LastActivityDate = null OR LastActivityDate <= {cutoff_date}) "
         "ORDER BY Name"
@@ -216,6 +224,7 @@ def _build_soql_no_open_opp(states: List[str]) -> str:
         "FROM Account "
         "WHERE Phone != null "
         f"AND BillingState IN ({state_list}) "
+        "AND OwnerId = '005Hr00000INgbqIAD' "
         "AND IsDeleted = false "
         "AND Id NOT IN (SELECT AccountId FROM Opportunity WHERE IsClosed = false AND AccountId != null) "
         "ORDER BY Name"
