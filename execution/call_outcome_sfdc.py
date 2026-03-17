@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
-call_outcome_sfdc.py — Update Salesforce Account LastActivityDate after a call.
+call_outcome_sfdc.py — Log a call outcome to Salesforce by creating a Task on the Account.
+
+Creating a Task is the correct Salesforce mechanism — it populates the activity timeline
+and automatically updates LastActivityDate (which is read-only/system-managed directly).
 
 Usage:
   python3 execution/call_outcome_sfdc.py "Account Name" interested
+  python3 execution/call_outcome_sfdc.py "Account Name" voicemail --note "Left VM, mention SD-WAN"
   python3 execution/call_outcome_sfdc.py "Account Name" --dry-run
 """
 
@@ -12,7 +16,7 @@ import json
 import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 try:
     from zoneinfo import ZoneInfo
@@ -22,16 +26,20 @@ except Exception:  # pragma: no cover
 SF_ALIAS = "fortinet"
 BUSINESS_TZ = "America/Phoenix"
 
+OUTCOME_SUBJECTS = {
+    "interested":    "AI Cold Call — Interested — Follow Up Required",
+    "voicemail":     "AI Cold Call — Voicemail Left",
+    "not_interested":"AI Cold Call — Not Interested",
+    "no_answer":     "AI Cold Call — No Answer",
+    "callback":      "AI Cold Call — Requested Callback",
+    "meeting":       "AI Cold Call — Meeting Booked",
+    "completed":     "AI Cold Call — Completed",
+}
+
 
 def _run_sf(args: List[str]) -> Tuple[bool, str]:
     try:
-        proc = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
-        )
+        proc = subprocess.run(args, capture_output=True, text=True, check=False, timeout=60)
     except subprocess.TimeoutExpired:
         return False, "sf CLI timed out after 60s"
     except Exception as exc:
@@ -52,74 +60,85 @@ def _escape_soql(value: str) -> str:
     return value.replace("'", "\\'")
 
 
+def _lookup_account(account_name: str) -> Optional[str]:
+    soql = f"SELECT Id, Name FROM Account WHERE Name = '{_escape_soql(account_name)}' LIMIT 1"
+    ok, out = _run_sf(["sf", "data", "query", "--query", soql, "--json", "--target-org", SF_ALIAS])
+    if not ok:
+        print(f"Query failed: {out}")
+        return None
+    try:
+        records = json.loads(out).get("result", {}).get("records", [])
+        return records[0].get("Id") if records else None
+    except Exception as exc:
+        print(f"Parse error: {exc}")
+        return None
+
+
+def _create_task(account_id: str, subject: str, note: str, date: str) -> Tuple[bool, str]:
+    """Create a Completed Task (Activity) on the Account — this auto-updates LastActivityDate."""
+    values = (
+        f"WhatId={account_id} "
+        f"Subject='{subject}' "
+        f"Status=Completed "
+        f"ActivityDate={date} "
+        f"Description='{_escape_soql(note)}'"
+    )
+    return _run_sf([
+        "sf", "data", "create", "record",
+        "--sobject", "Task",
+        "--values", values,
+        "--target-org", SF_ALIAS,
+        "--json",
+    ])
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Update SFDC Account LastActivityDate")
+    parser = argparse.ArgumentParser(description="Log AI call outcome to Salesforce via Task")
     parser.add_argument("account_name", help="Exact Salesforce Account Name")
-    parser.add_argument("outcome", nargs="?", default="completed", help="Call outcome label")
-    parser.add_argument("--dry-run", action="store_true", help="Print commands only")
+    parser.add_argument("outcome", nargs="?", default="completed",
+                        choices=list(OUTCOME_SUBJECTS.keys()) + ["completed"],
+                        help="Call outcome")
+    parser.add_argument("--note", default="", help="Optional call note")
+    parser.add_argument("--dry-run", action="store_true", help="Print what would happen, no writes")
     args = parser.parse_args()
 
     account_name = args.account_name.strip()
-    if not account_name:
-        print("Account name required.")
-        return 1
+    outcome = args.outcome or "completed"
+    subject = OUTCOME_SUBJECTS.get(outcome, f"AI Cold Call — {outcome.title()}")
+    note = args.note or f"AI voice caller — outcome: {outcome}"
+    date = _today_mst()
 
-    soql = (
-        "SELECT Id, Name FROM Account "
-        f"WHERE Name = '{_escape_soql(account_name)}' "
-        "LIMIT 1"
-    )
-
-    query_cmd = ["sf", "data", "query", "--query", soql, "--json", "--target-org", SF_ALIAS]
     if args.dry_run:
-        print("DRY RUN — would execute:")
-        print(" ".join(query_cmd))
-        print(f"Then update LastActivityDate to {_today_mst()}")
+        print(f"DRY RUN")
+        print(f"  Account:  {account_name}")
+        print(f"  Action:   Create Task on Account")
+        print(f"  Subject:  {subject}")
+        print(f"  Date:     {date}")
+        print(f"  Note:     {note}")
+        print(f"  Effect:   LastActivityDate auto-updated by Salesforce")
         return 0
 
-    ok, out = _run_sf(query_cmd)
+    print(f"Looking up account: {account_name}...")
+    account_id = _lookup_account(account_name)
+    if not account_id:
+        print(f"No Account found: {account_name}")
+        return 1
+
+    print(f"Found: {account_id} — creating Task...")
+    ok, out = _create_task(account_id, subject, note, date)
     if not ok:
-        print(f"Salesforce query failed: {out}")
+        print(f"Task creation failed: {out}")
         return 1
 
     try:
-        payload = json.loads(out)
-        records = payload.get("result", {}).get("records", [])
-    except Exception as exc:
-        print(f"Failed to parse Salesforce output: {exc}")
-        return 1
+        result = json.loads(out)
+        task_id = result.get("result", {}).get("id", "?")
+    except Exception:
+        task_id = "created"
 
-    if not records:
-        print(f"No Account found for name: {account_name}")
-        return 1
-
-    account_id = records[0].get("Id")
-    if not account_id:
-        print("Account Id missing from query result.")
-        return 1
-
-    date_value = _today_mst()
-    update_cmd = [
-        "sf",
-        "data",
-        "update",
-        "record",
-        "--sobject",
-        "Account",
-        "--record-id",
-        account_id,
-        "--values",
-        f"LastActivityDate={date_value}",
-        "--target-org",
-        SF_ALIAS,
-    ]
-
-    ok, out = _run_sf(update_cmd)
-    if not ok:
-        print(f"Salesforce update failed: {out}")
-        return 1
-
-    print(f"Updated {account_name} LastActivityDate={date_value} (outcome={args.outcome})")
+    print(f"✅ Task {task_id} created on {account_name} (outcome={outcome})")
+    print(f"   Subject: {subject}")
+    print(f"   LastActivityDate will auto-update in Salesforce")
     return 0
 
 
