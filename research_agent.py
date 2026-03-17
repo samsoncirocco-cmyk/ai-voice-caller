@@ -63,15 +63,18 @@ load_env()
 
 # LiteLLM gateway endpoint. Set to Tailscale IP of the M4 Mini gateway.
 # Example: http://100.x.x.x:4000
-LITELLM_BASE_URL       = os.environ.get("LITELLM_BASE_URL", "").rstrip("/")
+LITELLM_BASE_URL         = os.environ.get("LITELLM_BASE_URL", "").rstrip("/")
 LITELLM_VOICE_CALLER_KEY = os.environ.get("LITELLM_VOICE_CALLER_KEY", "")
+# Research uses a dedicated key scoped to research-brain model (Decision 024)
+# Falls back to LITELLM_VOICE_CALLER_KEY if not set (backward compat)
+LITELLM_RESEARCH_KEY     = os.environ.get("LITELLM_RESEARCH_KEY", "") or LITELLM_VOICE_CALLER_KEY
 
 # Model alias — gateway routes `research-brain` → perplexity/sonar → grok-3 fallback
 GATEWAY_MODEL  = "research-brain"
 GATEWAY_URL    = f"{LITELLM_BASE_URL}/chat/completions" if LITELLM_BASE_URL else ""
 
 # Whether gateway mode is active (both vars must be set)
-GATEWAY_ENABLED = bool(LITELLM_BASE_URL and LITELLM_VOICE_CALLER_KEY)
+GATEWAY_ENABLED = bool(LITELLM_BASE_URL and LITELLM_RESEARCH_KEY)
 
 # ─── Legacy Config (fallback when LITELLM_BASE_URL is unset) ─────
 
@@ -92,35 +95,51 @@ OPENAI_MODEL = "grok-4-fast-non-reasoning"  # xAI grok-4-fast-non-reasoning via 
 # Resets to 0 on any successful gateway call.
 
 CIRCUIT_BREAKER_THRESHOLD = 3
+CIRCUIT_BREAKER_COOLDOWN = 300  # seconds before auto-reset after trip
 
 _gateway_consecutive_failures: int = 0
 _gateway_tripped: bool = False
+_gateway_tripped_at: float = 0.0  # time.time() when tripped
 
 
 def _cb_record_success():
-    """Record a successful gateway call — resets consecutive failure count."""
-    global _gateway_consecutive_failures, _gateway_tripped
+    """Record a successful gateway call — resets consecutive failure count and un-trips breaker."""
+    global _gateway_consecutive_failures, _gateway_tripped, _gateway_tripped_at
     _gateway_consecutive_failures = 0
-    # Note: once tripped, we do NOT automatically un-trip within the same run.
-    # The operator should investigate and restart the campaign process.
+    if _gateway_tripped:
+        _gateway_tripped = False
+        _gateway_tripped_at = 0.0
+        print("\n✅ [circuit-breaker] Gateway recovered — resuming normal routing.")
 
 
 def _cb_record_failure():
     """Record a gateway failure. Returns True if the breaker just tripped."""
-    global _gateway_consecutive_failures, _gateway_tripped
+    global _gateway_consecutive_failures, _gateway_tripped, _gateway_tripped_at
     _gateway_consecutive_failures += 1
     if _gateway_consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD and not _gateway_tripped:
         _gateway_tripped = True
+        _gateway_tripped_at = time.time()
         print(
             f"\n⚡ [circuit-breaker] TRIPPED after {_gateway_consecutive_failures} consecutive"
-            f" gateway failures. Remaining research calls in this run will use generic context."
-            f" Restart the campaign process once the gateway is healthy."
+            f" gateway failures. Will auto-retry in {CIRCUIT_BREAKER_COOLDOWN}s."
         )
         return True
     return False
 
 
 def _cb_is_tripped() -> bool:
+    global _gateway_tripped, _gateway_tripped_at, _gateway_consecutive_failures
+    if _gateway_tripped and _gateway_tripped_at > 0:
+        elapsed = time.time() - _gateway_tripped_at
+        if elapsed >= CIRCUIT_BREAKER_COOLDOWN:
+            print(
+                f"\n🔄 [circuit-breaker] Cooldown expired ({elapsed:.0f}s). "
+                f"Resetting — next call will retry the gateway."
+            )
+            _gateway_tripped = False
+            _gateway_tripped_at = 0.0
+            _gateway_consecutive_failures = 0
+            return False
     return _gateway_tripped
 
 
@@ -185,7 +204,7 @@ def research_via_gateway(account_name, state, account_type):
         response = requests.post(
             GATEWAY_URL,
             headers={
-                "Authorization": f"Bearer {LITELLM_VOICE_CALLER_KEY}",
+                "Authorization": f"Bearer {LITELLM_RESEARCH_KEY}",
                 "Content-Type": "application/json",
             },
             json={
@@ -442,6 +461,9 @@ def _bq_pull(cache_key: str) -> dict | None:
         # Belt-and-suspenders: validate TTL from the JSON's own _cached_at field
         if not _check_json_ttl(data, L2_TTL_DAYS):
             return None
+        # Never serve cached generic_fallback — it's a failure signal, not real research
+        if data.get("_source") == "generic_fallback":
+            return None
         return data
     except Exception as e:
         print(f"  [research] BQ L2 pull failed (non-fatal): {e}")
@@ -552,6 +574,9 @@ def research_account(account_name, state, account_type="Education", sf_account_i
         if sf_account_id:
             result["sf_account_id"] = sf_account_id
         result["_cached_at"] = datetime.now(timezone.utc).isoformat()
+        # Never cache generic_fallback — it's a signal of failure, not real research
+        if result.get("_source") == "generic_fallback":
+            return result
         # Write L1 — always, fast
         try:
             cache_file.write_text(json.dumps(result, indent=2))
@@ -565,23 +590,34 @@ def research_account(account_name, state, account_type="Education", sf_account_i
     if GATEWAY_ENABLED:
         if _cb_is_tripped():
             print(
-                f"  [research] ⚡ Circuit breaker tripped — skipping gateway,"
-                f" using generic context for {account_name}"
+                f"  [research] ⚡ Circuit breaker tripped — hard fail for {account_name}"
+                f" (gateway auth/connectivity error, Decision 024)"
             )
+            # Hard fail — do NOT fall through to generic context when gateway is configured.
+            # Decision 024: invalid credential → None propagates → campaign runner stops call.
+            # Decision 008: no local key fallback when gateway is the configured path.
+            return None
         else:
             result = research_via_gateway(account_name, state, account_type)
             if result:
                 result["_source"] = "gateway/research-brain"
                 print(f"  [research] Got context via gateway: {result.get('summary', '')[:80]}...")
                 return _cache_and_return(result)
-            # Gateway failed; circuit-breaker already updated inside research_via_gateway()
+            # Gateway failed this call; circuit-breaker updated inside research_via_gateway().
+            # Hard fail — do NOT fall through to generic context (Decision 024).
+            # If the gateway returns non-200, the caller should not proceed with a fake prompt.
             if _cb_is_tripped():
                 print(
-                    f"  [research] ⚡ Circuit breaker just tripped — remaining calls this run"
-                    f" will use generic context."
+                    f"  [research] ⚡ Circuit breaker just tripped — hard fail."
+                    f" Campaign runner must stop placing calls."
                 )
-        # Fall through to generic context (no legacy API fallback when gateway is configured
-        # but failing — Decision 008: all keys live in the gateway, not locally)
+            else:
+                print(
+                    f"  [research] Gateway failure ({_gateway_consecutive_failures}/{CIRCUIT_BREAKER_THRESHOLD})"
+                    f" — hard fail for {account_name}. Call will not be placed."
+                )
+            return None
+        # Decision 008: no local key fallback when gateway is configured.
 
     # ── Legacy path (only when LITELLM_BASE_URL is NOT configured) ─
     elif not GATEWAY_ENABLED:

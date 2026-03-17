@@ -53,8 +53,8 @@ NUMBERS = {
     "+15152987809": {"label": "IA Local (515)", "state": "IA"},
     "+16028985026": {"label": "Original (602)", "state": "AZ"},
     "+14806024668": {"label": "Alex Lane (480-02)", "state": "AZ"},
-    "+14808227861": {"label": "Jackson Lane (480-22)", "state": "AZ"},
-    "+14806025848": {"label": "Mary Lane (480-58)", "state": "AZ"},
+    # "+14808227861": Jackson Lane (480-22) — removed from SignalWire (not found Mar 14 2026)
+    # "+14806025848": Mary Lane (480-58) — removed from SignalWire (not found Mar 14 2026)
 }
 
 

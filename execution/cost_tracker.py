@@ -8,6 +8,20 @@ def get_balance(config: dict) -> float:
     r.raise_for_status()
     return float(r.json().get('balance', 0))
 
+def get_running_total(log_file: str = "logs/campaign_cost.log"):
+    """Read the current running total from the cost log. Returns (last_cost, running_total)."""
+    import re
+    if not os.path.exists(log_file):
+        return 0.0, 0.0
+    with open(log_file) as f:
+        lines = [l for l in f.readlines() if 'running_total' in l]
+    if not lines:
+        return 0.0, 0.0
+    m_total = re.search(r'running_total=\$([0-9.]+)', lines[-1])
+    m_cost = re.search(r'cost=\$([0-9.]+)', lines[-1])
+    return (float(m_cost.group(1)) if m_cost else 0.0, float(m_total.group(1)) if m_total else 0.0)
+
+
 def log_call_cost(call_id: str, balance_before: float, balance_after: float,
                   log_file: str = "logs/campaign_cost.log"):
     cost = balance_before - balance_after

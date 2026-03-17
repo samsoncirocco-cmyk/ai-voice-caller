@@ -178,7 +178,7 @@ class SmartRouter:
 
     # ─────────────────────────── public API ──────────────────────────────────
 
-    def get_next_call(self, agent_id: str) -> Optional[Dict]:
+    def get_next_call(self, agent_id: str, **kwargs) -> Optional[Dict]:
         """
         Return the best available account + routing decision for agent_id.
 
@@ -257,9 +257,13 @@ class SmartRouter:
         account_id = best["account_id"]
         checked_out = self._checkout_specific(agent_id, account_id)
         if not checked_out:
-            # Race condition — another agent grabbed it; try recursively once
-            logger.debug("[SmartRouter] Race condition on %s, retrying.", account_id)
-            return self.get_next_call(agent_id)
+            # Race condition — another agent grabbed it; retry with depth guard
+            _retry_depth = kwargs.get("_retry_depth", 0)
+            if _retry_depth >= 10:
+                logger.warning("[SmartRouter] Max retry depth reached; no callable accounts.")
+                return None
+            logger.debug("[SmartRouter] Race condition on %s, retrying (%d/10).", account_id, _retry_depth + 1)
+            return self.get_next_call(agent_id, _retry_depth=_retry_depth + 1)
 
         # Track in-flight
         state = (best.get("state") or "").upper()

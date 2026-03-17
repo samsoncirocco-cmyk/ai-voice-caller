@@ -414,6 +414,24 @@ def process_single_call(call_entry: Dict, state: Dict, dry_run: bool = False, ve
         dry_run=dry_run,
     )
 
+    # Auto-push to SFDC — create Task on the Account
+    if not dry_run and call_entry.get("account_name"):
+        try:
+            sfdc_script = ROOT / "execution" / "call_outcome_sfdc.py"
+            outcome = parsed.get("outcome", "unknown").lower().replace(" ", "_")
+            note = (parsed.get("raw_summary") or "")[:500]
+            result = subprocess.run(
+                ["python3", str(sfdc_script), call_entry["account_name"], outcome, "--note", note],
+                capture_output=True, text=True, timeout=30,
+                env={**os.environ, "SF_DISABLE_AUTOUPDATE": "true"},
+            )
+            if result.returncode == 0:
+                actions.append(f"SFDC task created for {call_entry['account_name']}")
+            else:
+                print(f"  [sfdc] Warning: {result.stderr.strip()[:200]}")
+        except Exception as e:
+            print(f"  [sfdc] Error pushing to SFDC: {e}")
+
     # Print result
     outcome = parsed.get("outcome", "?")
     interest = parsed.get("interest_level", "?")

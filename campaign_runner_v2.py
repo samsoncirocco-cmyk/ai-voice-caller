@@ -79,6 +79,25 @@ except ImportError:
 DEFAULT_PROMPT = "prompts/paul.txt"
 DEFAULT_VOICE = "openai.onyx"
 
+# ─── Slack Alerts ────────────────────────────────────────────────
+SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
+SLACK_ALERT_CHANNEL = os.environ.get("SLACK_ALERT_CHANNEL", "C08FVAXJNPD")  # #call-blitz
+
+
+def _slack_alert(text: str):
+    """Best-effort Slack alert — never blocks or raises."""
+    if not SLACK_BOT_TOKEN:
+        return
+    try:
+        requests.post(
+            "https://slack.com/api/chat.postMessage",
+            headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}", "Content-Type": "application/json"},
+            json={"channel": SLACK_ALERT_CHANNEL, "text": text},
+            timeout=5,
+        )
+    except Exception:
+        pass
+
 # ─── State-Based Routing (2026-03-09) ────────────────────────────────
 # State → local presence number (605/402/515 for SD/NE/IA)
 STATE_FROM_NUMBERS = {
@@ -126,7 +145,8 @@ AUTH_TOKEN = CONFIG["auth_token"]
 SPACE_URL = CONFIG["space_url"]
 FROM_NUMBER = CONFIG.get("phone_number", "+16028985026")
 
-WEBHOOK_URL = "https://hooks.6eyes.dev/voice-caller/post-call"
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "vc-hook-9f3a7b2e")
+WEBHOOK_URL = f"https://hooks.6eyes.dev/voice-caller/post-call?token={WEBHOOK_SECRET}"
 
 # ─── Phone Number Normalization ──────────────────────────────────
 
@@ -152,12 +172,15 @@ def load_leads(csv_path):
     - Monday-pack: account_name, phone, state, call_type, talk_track
     """
     leads = []
+    skipped_phones = []
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row in reader:
             phone_raw = row.get("phone", "").strip()
             phone = normalize_phone(phone_raw)
             if not phone:
+                acct = row.get("account_name", "") or row.get("account", "") or row.get("name", "")
+                skipped_phones.append((phone_raw or "(empty)", acct))
                 continue
 
             # Resolve account name — handle both CSV schemas
@@ -198,6 +221,12 @@ def load_leads(csv_path):
                 # Pass SFDC Account ID so research_agent uses the stable cache key
                 "sf_account_id": row.get("sf_account_id", "").strip(),
             })
+    if skipped_phones:
+        print(f"\n  ⚠️  [load] Skipped {len(skipped_phones)} invalid phone numbers:")
+        for bad_phone, acct in skipped_phones[:10]:
+            print(f"    - {bad_phone!r} ({acct})")
+        if len(skipped_phones) > 10:
+            print(f"    ... and {len(skipped_phones) - 10} more")
     return leads
 
 
@@ -219,8 +248,10 @@ def load_state(csv_path):
 
 def save_state(csv_path, state):
     sf = get_state_file(csv_path)
-    with open(sf, "w") as f:
+    tmp = sf.with_suffix(".json.tmp")
+    with open(tmp, "w") as f:
         json.dump(state, f, indent=2)
+    tmp.replace(sf)  # atomic rename
 
 
 # ─── Research Cache ──────────────────────────────────────────────
@@ -447,6 +478,22 @@ def run_campaign(csv_path, args):
             sf_account_id=lead.get("sf_account_id", ""),
         )
 
+        # Hard fail — gateway returned None (auth error, connectivity error, or circuit tripped).
+        # Decision 024: None propagates correctly → no call placed.
+        if context is None:
+            print(
+                f"\n  🛑 [campaign] Research returned None for {lead['account']} — "
+                f"gateway hard fail. Skipping call. Investigate gateway before resuming."
+            )
+            _slack_alert(
+                f"🛑 *Campaign hard fail*: Research returned None for `{lead['account']}`. "
+                f"Gateway may be down. Call skipped."
+            )
+            skipped_count = skipped_count + 1 if 'skipped_count' in dir() else 1
+            state["last_index"] = global_index
+            save_state(csv_path, state)
+            continue
+
         context_source = context.get("_source", "unknown")
         print(f"  Hook: {context.get('hook_1', 'N/A')[:80]}")
 
@@ -494,13 +541,23 @@ def run_campaign(csv_path, args):
         swml["global_data"] = global_data
 
         # Step 3: Place call
-        print(f"  Calling {lead['phone']}...")
+        # Spend enforcement — check BEFORE placing the call
         balance_before = None
         if cost_tracker:
             try:
                 balance_before = cost_tracker.get_balance(CONFIG)
             except Exception as exc:
                 print(f"  [warn] Could not fetch pre-call balance: {exc}")
+        if args.max_spend and cost_tracker:
+            _, running_total = cost_tracker.get_running_total()
+            if running_total >= args.max_spend:
+                print(
+                    f"\n  💰 [campaign] Spend limit reached: ${running_total:.2f} >= "
+                    f"${args.max_spend:.2f}. Halting campaign."
+                )
+                break
+
+        print(f"  Calling {lead['phone']}...")
         result = make_call(lead["phone"], swml, from_number=args.from_number)
 
         call_id_for_cost = None
@@ -562,6 +619,15 @@ def run_campaign(csv_path, args):
         print(f"    Calls with generic context: {generic_context_count}")
         if generic_context_count > 0:
             print(f"    ⚠️  ACTION NEEDED: Check gateway health before next campaign run.")
+
+    # Slack summary
+    skipped = skipped_count if 'skipped_count' in dir() else 0
+    _, total_spend = cost_tracker.get_running_total() if cost_tracker else (0, 0)
+    _slack_alert(
+        f"📊 *Campaign complete* ({Path(csv_path).name})\n"
+        f"  Completed: {len(state['completed'])} | Failed: {len(state['failed'])} | "
+        f"Skipped: {skipped} | Spend: ${total_spend:.2f}"
+    )
 
 
 # ─── SmartRouter-based Campaign Runner ──────────────────────────
@@ -696,6 +762,19 @@ def run_campaign_db(args):
             vertical,
             sf_account_id=account.get("sfdc_id", ""),
         )
+
+        if context is None:
+            print(
+                f"\n  🛑 [campaign] Research returned None for {account['account_name']} — "
+                f"gateway hard fail. Skipping call. Investigate gateway before resuming."
+            )
+            _slack_alert(
+                f"🛑 *Campaign hard fail*: Research returned None for `{account['account_name']}`. "
+                f"Gateway may be down. Call skipped."
+            )
+            results_by_vertical[vertical]["skipped"] = results_by_vertical[vertical].get("skipped", 0) + 1
+            continue
+
         context_source = context.get("_source", "unknown")
         print(f"  Research: {context_source} | Hook: {context.get('hook_1', 'N/A')[:60]}")
 
@@ -737,13 +816,24 @@ def run_campaign_db(args):
         swml["global_data"] = global_data
 
         # Place call with GSD-routed from_number
-        print(f"  Calling {account['phone']}...")
+        # Spend enforcement — check BEFORE placing the call
         balance_before = None
         if cost_tracker:
             try:
                 balance_before = cost_tracker.get_balance(CONFIG)
             except Exception as exc:
                 print(f"  [warn] Could not fetch pre-call balance: {exc}")
+        if args.max_spend and cost_tracker:
+            _, running_total = cost_tracker.get_running_total()
+            if running_total >= args.max_spend:
+                print(
+                    f"\n  💰 [campaign] Spend limit reached: ${running_total:.2f} >= "
+                    f"${args.max_spend:.2f}. Halting campaign."
+                )
+                router.complete_call(account["account_id"], "skipped")
+                break
+
+        print(f"  Calling {account['phone']}...")
         result = make_call(account["phone"], swml, from_number=from_number)
 
         call_id_for_cost = None
@@ -819,6 +909,17 @@ def run_campaign_db(args):
     print(f"\n  Call log: {LOG_DIR / 'campaign_log.jsonl'}")
     print(f"{'='*60}")
 
+    # Slack summary
+    total_skipped = sum(v.get("skipped", 0) for v in results_by_vertical.values())
+    total_success = sum(v.get("success", 0) for v in results_by_vertical.values())
+    total_failed = sum(v.get("failed", 0) for v in results_by_vertical.values())
+    _, total_spend = cost_tracker.get_running_total() if cost_tracker else (0, 0)
+    _slack_alert(
+        f"📊 *SmartRouter campaign complete*\n"
+        f"  Calls: {calls_made} | Success: {total_success} | Failed: {total_failed} | "
+        f"Skipped: {total_skipped} | Spend: ${total_spend:.2f}"
+    )
+
     return results_by_vertical
 
 
@@ -833,10 +934,14 @@ if __name__ == "__main__":
     parser.add_argument("--limit", type=int, default=None, help="Max calls to make")
     parser.add_argument("--interval", type=int, default=240, help="Seconds between calls (default: 240 = 4 min)")
     parser.add_argument("--resume", action="store_true", help="Resume from last position (CSV mode only)")
-    parser.add_argument("--business-hours", action="store_true", help="Only call 8am-4pm Central")
+    parser.add_argument("--no-business-hours", dest="business_hours", action="store_false",
+                        help="Disable business hours enforcement (default: ON)")
+    parser.set_defaults(business_hours=True)
     parser.add_argument("--bypass-time-windows", action="store_true",
                         help="Ignore SmartRouter time-of-day rules (for testing)")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Prompt file path (CSV mode; SmartRouter uses GSD rules)")
+    parser.add_argument("--max-spend", type=float, default=None,
+                        help="Halt campaign after spending this many dollars (e.g. --max-spend 20.00)")
     parser.add_argument("--voice", default=DEFAULT_VOICE, help="TTS voice (default: openai.onyx)")
     parser.add_argument("--from", dest="from_number", default=None,
                         help="Outbound caller ID (CSV mode; SmartRouter uses GSD rules)")

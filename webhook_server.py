@@ -43,6 +43,11 @@ LOG_FILE = os.path.join(LOG_DIR, "call_summaries.jsonl")
 TRANSCRIPTS_DIR = os.path.join(LOG_DIR, "call_transcripts")
 os.makedirs(LOG_DIR, exist_ok=True)
 
+# Webhook auth — shared secret passed as URL query param by campaign runner.
+# SignalWire doesn't support HMAC on post_prompt_url callbacks, so we embed
+# the token in the URL at call-creation time and verify it here.
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "vc-hook-9f3a7b2e")
+
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -78,6 +83,12 @@ def post_call_summary():
     Receives SignalWire post_prompt_url callback after each AI call.
     Logs to logs/call_summaries.jsonl (flat file, easy to query).
     """
+    # Auth check — verify shared secret in URL params
+    token = request.args.get("token", "")
+    if token != WEBHOOK_SECRET:
+        app.logger.warning(f"Unauthorized POST to /voice-caller/post-call from {request.remote_addr}")
+        return jsonify({"error": "unauthorized"}), 401
+
     data = request.json or {}
     # FIX 2026-03-13: Read sfdc_id from URL query params FIRST (guaranteed delivery).
     # SignalWire does NOT echo global_data in post_prompt_url callbacks, so we embed
