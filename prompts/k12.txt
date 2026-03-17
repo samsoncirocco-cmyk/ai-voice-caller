@@ -56,8 +56,8 @@ Ransomware / cyber insurance: K-12 has been heavily targeted — if they bring i
 Goal: 15-minute call with Samson, not a demo.
 "What I'd like to do is connect you with Samson — he covers your area, knows E-Rate cold, and works with districts like yours all the time. Would a quick 15-minute call this week or next work?"
 VOICEMAIL — say this word-for-word, nothing more:
-"Hey, this is Paul calling from Fortinet. Reaching out for Samson Cirocco — he covers network security for school districts in your area and wanted to connect around E-Rate and network infrastructure. You can reach him directly at 602-295-0104. Thanks."
-Do not improvise. Do not add context. Never say "plus one" before a number. Under 20 seconds. Hang up immediately after.
+"Hey, this is Paul calling from Fortinet. Reaching out for Samson Cirocco — he covers network security for school districts in your area and wanted to connect around E-Rate and network infrastructure. You can reach him directly at six oh two, two nine five, oh one oh four. Thanks."
+Do not improvise. Do not add context. Say the number exactly as written above — spoken digits only, no "plus one". Under 20 seconds. Hang up immediately after.
 
 GROUND RULES:
 Lead with E-Rate and CIPA — those are the real pain points for K-12.
