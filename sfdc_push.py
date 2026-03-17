@@ -114,13 +114,15 @@ def _query_account_by_phone(last10: str) -> Optional[Dict[str, str]]:
 def _parse_disposition(summary: str) -> str:
     """Extract Call outcome line and map to SF CallDisposition picklist."""
     valid = {
-        "connected": "Connected",
-        "left voicemail": "Left Voicemail",
-        "voicemail": "Left Voicemail",
-        "no answer": "No Answer",
-        "wrong number": "Wrong Number",
+        "connected": "Call",
+        "left voicemail": "Voicemail",
+        "voicemail": "Voicemail",
+        "no answer": "Call",
+        "wrong number": "Call",
         "not interested": "Not Interested",
-        "meeting booked": "Meeting Booked",
+        "meeting booked": "Meeting",
+        "meeting": "Meeting",
+        "referral": "Referral",
     }
     for line in summary.splitlines():
         if line.lower().startswith("- call outcome:"):
@@ -135,7 +137,7 @@ def _create_task(account_id: str, date_str: str, summary: str,
                  account_name: str = "") -> Optional[str]:
     disposition = _parse_disposition(summary)
     label = f" - {account_name}" if account_name else ""
-    subject = f"Paul - {disposition}{label} - {date_str}"
+    subject = disposition if disposition else "Call"
     task_fields = {
         "Subject": subject,
         "Status": "Completed",

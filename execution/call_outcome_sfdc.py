@@ -27,13 +27,14 @@ SF_ALIAS = "fortinet"
 BUSINESS_TZ = "America/Phoenix"
 
 OUTCOME_SUBJECTS = {
-    "interested":    "Cold Call — Interested — Follow Up Required",
-    "voicemail":     "Cold Call — Voicemail Left",
-    "not_interested":"Cold Call — Not Interested",
-    "no_answer":     "Cold Call — No Answer",
-    "callback":      "Cold Call — Requested Callback",
-    "meeting":       "Cold Call — Meeting Booked",
-    "completed":     "Cold Call — Completed",
+    "interested":    "Call",
+    "voicemail":     "Voicemail",
+    "not_interested":"Not Interested",
+    "no_answer":     "Call",
+    "callback":      "Call",
+    "meeting":       "Meeting",
+    "completed":     "Call",
+    "referral":      "Referral",
 }
 
 
@@ -104,7 +105,7 @@ def main() -> int:
 
     account_name = args.account_name.strip()
     outcome = args.outcome or "completed"
-    subject = OUTCOME_SUBJECTS.get(outcome, f"Cold Call — {outcome.title()}")
+    subject = OUTCOME_SUBJECTS.get(outcome, "Call")
     note = args.note or f"Cold call — outcome: {outcome}"
     date = _today_mst()
 

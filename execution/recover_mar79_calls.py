@@ -190,7 +190,7 @@ def sfdc_create_task(account_id: str, account_name: str, call_date: str, dry_run
     Returns (success, message/id).
     """
     task_date = call_date[:10]  # ISO date portion: YYYY-MM-DD
-    subject   = "Paul - No Summary Received"
+    subject   = "Call"
     body      = (
         f"Paul placed an outbound call to {account_name} on {task_date}. "
         "Call was connected but the post-call summary was not captured due to a webhook "

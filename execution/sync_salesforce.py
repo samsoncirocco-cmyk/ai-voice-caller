@@ -263,7 +263,7 @@ def sync_call(call, account_info, account_id, args, stats):
     desc = summary[:500] if summary else f"Outbound call | call_id: {call_id}"
 
     task_fields = {
-        "Subject": f"Cold Call - {outcome}",
+        "Subject": {"interested": "Call", "voicemail": "Voicemail", "meeting": "Meeting", "not_interested": "Not Interested", "referral": "Referral"}.get(outcome.lower().replace(" ", "_"), "Call"),
         "Status": "Completed",
         "ActivityDate": activity_date,
         "Description": desc,

@@ -792,7 +792,7 @@ def _push_referral(event: dict) -> tuple:
     call_id        = event.get("call_id", "n/a")
     summary        = event.get("summary", "")
 
-    subject = f"Paul — Referral: {referral_name or referral_org or 'unknown'}"
+    subject = "Referral"
     description = (
         f"Referral captured during outbound call ({date_str}).\n"
         f"Referred Name : {referral_name}\n"
@@ -828,7 +828,7 @@ def _push_new_lead(event: dict) -> tuple:
     call_id    = event.get("call_id", "n/a")
     summary    = event.get("summary", "")
 
-    subject = f"Paul — New Lead: {lead_name or lead_org or 'unknown'}"
+    subject = "Call"
     description = (
         f"New lead captured during outbound call ({date_str}).\n"
         f"Lead Name  : {lead_name}\n"
