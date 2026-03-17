@@ -27,13 +27,13 @@ SF_ALIAS = "fortinet"
 BUSINESS_TZ = "America/Phoenix"
 
 OUTCOME_SUBJECTS = {
-    "interested":    "AI Cold Call — Interested — Follow Up Required",
-    "voicemail":     "AI Cold Call — Voicemail Left",
-    "not_interested":"AI Cold Call — Not Interested",
-    "no_answer":     "AI Cold Call — No Answer",
-    "callback":      "AI Cold Call — Requested Callback",
-    "meeting":       "AI Cold Call — Meeting Booked",
-    "completed":     "AI Cold Call — Completed",
+    "interested":    "Cold Call — Interested — Follow Up Required",
+    "voicemail":     "Cold Call — Voicemail Left",
+    "not_interested":"Cold Call — Not Interested",
+    "no_answer":     "Cold Call — No Answer",
+    "callback":      "Cold Call — Requested Callback",
+    "meeting":       "Cold Call — Meeting Booked",
+    "completed":     "Cold Call — Completed",
 }
 
 
@@ -104,8 +104,8 @@ def main() -> int:
 
     account_name = args.account_name.strip()
     outcome = args.outcome or "completed"
-    subject = OUTCOME_SUBJECTS.get(outcome, f"AI Cold Call — {outcome.title()}")
-    note = args.note or f"AI voice caller — outcome: {outcome}"
+    subject = OUTCOME_SUBJECTS.get(outcome, f"Cold Call — {outcome.title()}")
+    note = args.note or f"Cold call — outcome: {outcome}"
     date = _today_mst()
 
     if args.dry_run:

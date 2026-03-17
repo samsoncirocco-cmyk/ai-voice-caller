@@ -154,7 +154,7 @@ def sf_upsert_contact(account_id, contact, dry_run=False):
         "LastName": last,
         "Title": contact.get("title") or "",
         "AccountId": account_id,
-        "LeadSource": "AI Research",
+        "LeadSource": "Cold Calling",
         "Description": f"Source: {contact.get('source_url','')} | Confidence: {contact.get('confidence','')}",
     }
     if contact.get("email"):
@@ -260,10 +260,10 @@ def sync_call(call, account_info, account_id, args, stats):
             outcome = "Not Interested"
 
     activity_date = timestamp[:10] if timestamp else datetime.now().strftime("%Y-%m-%d")
-    desc = summary[:500] if summary else f"AI outbound call | call_id: {call_id}"
+    desc = summary[:500] if summary else f"Outbound call | call_id: {call_id}"
 
     task_fields = {
-        "Subject": f"AI Call - {outcome}",
+        "Subject": f"Cold Call - {outcome}",
         "Status": "Completed",
         "ActivityDate": activity_date,
         "Description": desc,

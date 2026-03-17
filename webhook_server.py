@@ -14,6 +14,10 @@ Routes:
   GET  /outlook-sync                    ← Latest Outlook snapshot
   GET  /voice-caller/agents             ← Per-agent performance stats
   GET  /voice-caller/activity           ← Recent call log entries
+  POST /email/approve                   ← Approve email draft (WAITING_HUMAN → DONE)
+  POST /email/reject                    ← Reject email draft (WAITING_HUMAN → CANCELLED)
+  GET  /email/pending                   ← List pending email drafts
+  GET  /email/stats                     ← Email draft statistics
   GET  /health                          ← Health check
   GET  /                                ← Status + route listing
 
@@ -59,6 +63,10 @@ def index():
             "GET  /outlook-sync",
             "GET  /voice-caller/agents",
             "GET  /voice-caller/activity",
+            "POST /email/approve                   ← Approve email draft",
+            "POST /email/reject                    ← Reject email draft",
+            "GET  /email/pending                   ← List pending drafts",
+            "GET  /email/stats                     ← Draft statistics",
             "GET  /health",
         ]
     }), 200
@@ -784,9 +792,9 @@ def _push_referral(event: dict) -> tuple:
     call_id        = event.get("call_id", "n/a")
     summary        = event.get("summary", "")
 
-    subject = f"AI Caller — Referral: {referral_name or referral_org or 'unknown'}"
+    subject = f"Paul — Referral: {referral_name or referral_org or 'unknown'}"
     description = (
-        f"Referral captured during AI outbound call ({date_str}).\n"
+        f"Referral captured during outbound call ({date_str}).\n"
         f"Referred Name : {referral_name}\n"
         f"Referred Org  : {referral_org}\n"
         f"Referred Phone: {referral_phone}\n"
@@ -820,9 +828,9 @@ def _push_new_lead(event: dict) -> tuple:
     call_id    = event.get("call_id", "n/a")
     summary    = event.get("summary", "")
 
-    subject = f"AI Caller — New Lead: {lead_name or lead_org or 'unknown'}"
+    subject = f"Paul — New Lead: {lead_name or lead_org or 'unknown'}"
     description = (
-        f"New lead captured during AI outbound call ({date_str}).\n"
+        f"New lead captured during outbound call ({date_str}).\n"
         f"Lead Name  : {lead_name}\n"
         f"Lead Org   : {lead_org}\n"
         f"Lead Phone : {lead_phone}\n"
@@ -1041,6 +1049,85 @@ def sfdc_live_sync_status():
 
 # ══════════════════════════════════════════════════════════════════════════════
 # END V2 SFDC LIVE SYNC
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# EMAIL APPROVAL API
+# ══════════════════════════════════════════════════════════════════════════════
+
+WORKSPACE = os.path.expanduser("~/.openclaw/workspace")
+sys.path.insert(0, os.path.join(WORKSPACE, "execution"))
+
+def _get_email_bridge():
+    """Lazy import of email-approval-bridge module."""
+    try:
+        from importlib import import_module
+        bridge = import_module("email-approval-bridge")
+        bridge.load_env()
+        return bridge
+    except Exception as exc:
+        return None
+
+
+@app.route("/email/approve", methods=["POST"])
+def email_approve():
+    """Approve an email draft task (mark DONE, optionally push to Outlook)."""
+    data = request.json or {}
+    task_id = data.get("task_id")
+    if not task_id:
+        return jsonify({"success": False, "message": "Missing task_id"}), 400
+
+    bridge = _get_email_bridge()
+    if not bridge:
+        return jsonify({"success": False, "message": "Email bridge module not available"}), 500
+
+    send = data.get("send", True)  # Default: push to Outlook if not already there
+    success, message = bridge.approve_draft(task_id, actor="samson", send=send)
+    return jsonify({"success": success, "message": message}), 200 if success else 400
+
+
+@app.route("/email/reject", methods=["POST"])
+def email_reject():
+    """Reject an email draft task (mark CANCELLED)."""
+    data = request.json or {}
+    task_id = data.get("task_id")
+    if not task_id:
+        return jsonify({"success": False, "message": "Missing task_id"}), 400
+
+    bridge = _get_email_bridge()
+    if not bridge:
+        return jsonify({"success": False, "message": "Email bridge module not available"}), 500
+
+    reason = data.get("reason", "")
+    success, message = bridge.reject_draft(task_id, actor="samson", reason=reason)
+    return jsonify({"success": success, "message": message}), 200 if success else 400
+
+
+@app.route("/email/pending", methods=["GET"])
+def email_pending():
+    """List all pending email draft tasks."""
+    bridge = _get_email_bridge()
+    if not bridge:
+        return jsonify({"success": False, "message": "Email bridge module not available"}), 500
+
+    pending = bridge.list_pending()
+    return jsonify({"success": True, "count": len(pending), "drafts": pending}), 200
+
+
+@app.route("/email/stats", methods=["GET"])
+def email_stats():
+    """Get email draft task statistics."""
+    bridge = _get_email_bridge()
+    if not bridge:
+        return jsonify({"success": False, "message": "Email bridge module not available"}), 500
+
+    stats = bridge.get_stats()
+    return jsonify({"success": True, "stats": stats}), 200
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# END EMAIL APPROVAL API
 # ══════════════════════════════════════════════════════════════════════════════
 
 
