@@ -110,7 +110,7 @@ def build_swml(prompt_text, voice, static_greeting=None, sfdc_id="", account_nam
                         "params": {
                             # FIX 2026-03-03: wait_for_user defaults to True on outbound calls.
                             # Without these params, agent waits for remote party to speak → silence.
-                            "ai_model": "gpt-4.1-nano",
+                            "ai_model": "gpt-4o",
                             "direction": "outbound",
                             "wait_for_user": False,
                             "speak_when_spoken_to": False,

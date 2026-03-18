@@ -35,8 +35,10 @@ import threading
 import time
 from datetime import datetime, timezone
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app, origins=["https://brain.6eyes.dev", "http://localhost:3001", "http://localhost:3000"])
 
 LOG_DIR  = os.path.join(os.path.dirname(__file__), "logs")
 LOG_FILE = os.path.join(LOG_DIR, "call_summaries.jsonl")
