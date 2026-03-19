@@ -36,11 +36,13 @@ Requires (legacy fallback mode — used if LITELLM_BASE_URL is unset):
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import requests
 from pathlib import Path
 from datetime import datetime, timezone
+from typing import Dict, Optional
 
 # ─── Config ──────────────────────────────────────────────────────
 
@@ -702,6 +704,122 @@ def parse_agent_name(prompt_path: str) -> str:
         return match.group(1).strip()
     return "Paul"
 
+# ─── SFDC History Lookup ──────────────────────────────────────────
+
+SF_ALIAS = "fortinet"
+
+
+def _sf_query(soql: str) -> list:
+    """Run a SOQL query via sf CLI. Returns list of record dicts, or [] on failure."""
+    try:
+        proc = subprocess.run(
+            ["sf", "data", "query", "--query", soql, "--json", "--target-org", SF_ALIAS],
+            capture_output=True, text=True, timeout=15,
+        )
+        if proc.returncode != 0:
+            return []
+        return json.loads(proc.stdout).get("result", {}).get("records", [])
+    except Exception:
+        return []
+
+
+def lookup_sfdc_history(account_name: str, sf_account_id: str = "") -> Optional[Dict]:
+    """
+    Pull relationship history from SFDC for an account.
+    Returns dict with last_activity, open_opp, contacts, or None if not found.
+    Best-effort — never blocks the call if SFDC is unreachable.
+    """
+    escaped = account_name.replace("'", "\\'")
+
+    # Find the account
+    if sf_account_id:
+        acct_records = _sf_query(
+            f"SELECT Id, Name, LastActivityDate, OwnerId FROM Account WHERE Id = '{sf_account_id}' LIMIT 1"
+        )
+    else:
+        acct_records = _sf_query(
+            f"SELECT Id, Name, LastActivityDate, OwnerId FROM Account WHERE Name = '{escaped}' LIMIT 1"
+        )
+
+    if not acct_records:
+        return None
+
+    acct = acct_records[0]
+    acct_id = acct.get("Id", "")
+    result = {
+        "sfdc_account_id": acct_id,
+        "last_activity_date": acct.get("LastActivityDate"),
+    }
+
+    # Recent tasks (last 3 call outcomes)
+    tasks = _sf_query(
+        f"SELECT Subject, Description, ActivityDate FROM Task "
+        f"WHERE WhatId = '{acct_id}' AND Status = 'Completed' "
+        f"ORDER BY ActivityDate DESC LIMIT 3"
+    )
+    if tasks:
+        result["recent_tasks"] = [
+            {"subject": t.get("Subject", ""), "date": t.get("ActivityDate", ""),
+             "note": (t.get("Description") or "")[:150]}
+            for t in tasks
+        ]
+
+    # Open opportunities
+    opps = _sf_query(
+        f"SELECT Name, StageName, Amount, CloseDate FROM Opportunity "
+        f"WHERE AccountId = '{acct_id}' AND IsClosed = false LIMIT 1"
+    )
+    if opps:
+        opp = opps[0]
+        result["open_opp"] = {
+            "name": opp.get("Name", ""),
+            "stage": opp.get("StageName", ""),
+            "amount": opp.get("Amount"),
+            "close_date": opp.get("CloseDate", ""),
+        }
+
+    # Contacts on the account
+    contacts = _sf_query(
+        f"SELECT Name, Title, Email, Phone FROM Contact "
+        f"WHERE AccountId = '{acct_id}' ORDER BY LastModifiedDate DESC LIMIT 3"
+    )
+    if contacts:
+        result["sfdc_contacts"] = [
+            {"name": c.get("Name", ""), "title": c.get("Title", ""),
+             "email": c.get("Email"), "phone": c.get("Phone")}
+            for c in contacts
+        ]
+
+    return result
+
+
+def _format_sfdc_history(history: Optional[Dict]) -> str:
+    """Format SFDC history into a block for the prompt preamble."""
+    if not history:
+        return "No prior SFDC history found."
+
+    lines = []
+    if history.get("last_activity_date"):
+        lines.append(f"Last activity: {history['last_activity_date']}")
+
+    if history.get("recent_tasks"):
+        for t in history["recent_tasks"]:
+            note = f" — {t['note']}" if t["note"] else ""
+            lines.append(f"  • {t['date']}: {t['subject']}{note}")
+
+    if history.get("open_opp"):
+        opp = history["open_opp"]
+        amt = f"${opp['amount']:,.0f}" if opp.get("amount") else "no amount"
+        lines.append(f"OPEN DEAL: {opp['name']} | Stage: {opp['stage']} | {amt} | Close: {opp['close_date']}")
+
+    if history.get("sfdc_contacts"):
+        for c in history["sfdc_contacts"]:
+            title = f" ({c['title']})" if c.get("title") else ""
+            lines.append(f"  Contact: {c['name']}{title}")
+
+    return "\n".join(lines) if lines else "No prior SFDC history found."
+
+
 def build_context_preamble(context):
     """
     Build a context block to prepend to any prompt file (paul.txt, cold_outreach.txt).
@@ -714,8 +832,16 @@ def build_context_preamble(context):
     state = context.get('state', '')
     location = f"{account_name}, {state}" if state else account_name
 
+    # SFDC history — pull relationship context if available
+    sfdc_history = context.get("_sfdc_history")
+    sfdc_block = _format_sfdc_history(sfdc_history)
+
     return f"""=== YOU ARE CALLING: {location.upper()} ===
 This is the account. Know this name. Reference it naturally.
+
+=== YOUR RELATIONSHIP HISTORY (from Salesforce) ===
+{sfdc_block}
+=== END RELATIONSHIP HISTORY ===
 
 === PRE-CALL INTEL ===
 ACCOUNT SUMMARY: {context.get('summary', 'No specific intel available.')}
@@ -753,6 +879,21 @@ def build_dynamic_swml(context, base_prompt_path="prompts/paul.txt",
         base_prompt = full_path.read_text().strip()
     else:
         base_prompt = "You are Paul, calling on behalf of Samson at Fortinet."
+
+    # Enrich with SFDC history if not already present
+    if "_sfdc_history" not in context:
+        try:
+            sfdc_hist = lookup_sfdc_history(
+                context.get("account_name", ""),
+                sf_account_id=context.get("sf_account_id", ""),
+            )
+            if sfdc_hist:
+                context["_sfdc_history"] = sfdc_hist
+                print(f"  [sfdc] Attached history: last_activity={sfdc_hist.get('last_activity_date', 'none')}"
+                      f", open_opp={'yes' if sfdc_hist.get('open_opp') else 'no'}"
+                      f", contacts={len(sfdc_hist.get('sfdc_contacts', []))}")
+        except Exception as e:
+            print(f"  [sfdc] History lookup failed (non-blocking): {e}")
 
     # Prepend account context
     preamble = build_context_preamble(context)
@@ -820,14 +961,18 @@ def build_dynamic_swml(context, base_prompt_path="prompts/paul.txt",
                             # Without these params, agent waits for remote party to speak → silence.
                             # NOTE: ai_model is SignalWire's parameter — NOT routable through our gateway
                             # (Decision 002). SignalWire runs this on their own infrastructure.
-                            "ai_model": "gpt-4o",
+                            "ai_model": "gpt-4o-mini",
                             "direction": "outbound",
                             "wait_for_user": False,
                             "speak_when_spoken_to": False,
                             "static_greeting": static_greeting,
+                            "static_greeting_no_barge": True,
+                            "acknowledge_interruptions": True,
+                            "enable_thinking": True,
+                            "hard_stop_time": "5m",
                             # attention_timeout (not outbound_attention_timeout — invalid param)
-                            "attention_timeout": 30000,
-                            "inactivity_timeout": 30000,
+                            "attention_timeout": 60000,
+                            "inactivity_timeout": 60000,
                             "end_of_speech_timeout": 2000,
                             # asr_engine format: "provider:model" colon-separated string
                             # NOT a nested engine.asr object (was causing silent AI failure)

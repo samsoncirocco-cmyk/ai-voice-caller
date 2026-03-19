@@ -110,18 +110,18 @@ def build_swml(prompt_text, voice, static_greeting=None, sfdc_id="", account_nam
                         "params": {
                             # FIX 2026-03-03: wait_for_user defaults to True on outbound calls.
                             # Without these params, agent waits for remote party to speak → silence.
-                            "ai_model": "gpt-4o",
+                            "ai_model": "gpt-4o-mini",
                             "direction": "outbound",
                             "wait_for_user": False,
                             "speak_when_spoken_to": False,
                             "static_greeting": static_greeting or DEFAULT_GREETING,
-                            # FIX 2026-03-09: Reduced from 30s → 10s.
-                            # 30s caused AI to loop on open voicemail lines for 68+ minutes.
-                            # FIX 2026-03-12: Increased back to 20s — 10s was dropping real
-                            # conversations during natural pauses. 20s balances both risks.
-                            "attention_timeout": 20000,
-                            "inactivity_timeout": 20000,
-                            "end_of_speech_timeout": 3000,
+                            "static_greeting_no_barge": True,
+                            "acknowledge_interruptions": True,
+                            "enable_thinking": True,
+                            "hard_stop_time": "5m",
+                            "attention_timeout": 60000,
+                            "inactivity_timeout": 60000,
+                            "end_of_speech_timeout": 2000,
                             # asr_engine format: "provider:model" — colon-separated string
                             # NOT a nested engine.asr object (that was causing silent AI failure)
                             "asr_engine": "deepgram:nova-3"
