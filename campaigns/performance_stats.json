@@ -8,6 +8,14 @@
       "calls": 0,
       "answered": 0
     },
+    "prompts/mary.txt": {
+      "calls": 0,
+      "answered": 0
+    },
+    "prompts/jackson.txt": {
+      "calls": 0,
+      "answered": 0
+    },
     "prompts/cold_outreach.txt": {
       "calls": 0,
       "answered": 0
@@ -15,6 +23,14 @@
   },
   "government": {
     "prompts/paul.txt": {
+      "calls": 0,
+      "answered": 0
+    },
+    "prompts/mary.txt": {
+      "calls": 0,
+      "answered": 0
+    },
+    "prompts/jackson.txt": {
       "calls": 0,
       "answered": 0
     },
@@ -28,6 +44,10 @@
       "calls": 0,
       "answered": 0
     },
+    "prompts/jackson.txt": {
+      "calls": 0,
+      "answered": 0
+    },
     "prompts/paul.txt": {
       "calls": 0,
       "answered": 0
@@ -35,6 +55,10 @@
   },
   "other": {
     "prompts/cold_outreach.txt": {
+      "calls": 0,
+      "answered": 0
+    },
+    "prompts/jackson.txt": {
       "calls": 0,
       "answered": 0
     },

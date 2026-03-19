@@ -18,6 +18,7 @@ Public API
     #     "prompt_file": "prompts/paul.txt",
     #     "voice":       "openai.onyx",
     #     "vertical":    "k12",
+    #     "persona":     "paul",
     #     "reason":      "K-12 school → paul.txt (answer_rate 40% vs 20%)",
     #   }
     # → None if no callable accounts right now
@@ -29,8 +30,18 @@ Routing layers (applied in order)
                          NEVER call 12-1pm (lunch block)
   2. State load-balancer: if ≥3 calls in-flight for a state, prefer others
   3. Vertical matcher:   decide prompt_file + voice from account type/name
-  4. Performance tuner:  if performance_stats.json has data, pick the
+  4. A/B persona rotation: cycle through all available personas evenly until
+                         performance data (10+ calls) establishes a winner
+  5. Performance tuner:  if performance_stats.json has data, pick the
                          variant with the highest answer_rate for this vertical
+
+Persona A/B testing (2026-03-18):
+  Available personas:
+    paul    → prompts/paul.txt    + openai.onyx    — authority/compliance (K-12, Gov)
+    mary    → prompts/mary.txt    + openai.nova    — warm/direct female (K-12, Gov)
+    jackson → prompts/jackson.txt + openai.echo    — efficient male (K-12, Gov)
+    alex    → prompts/cold_outreach.txt + openai.shimmer — cold open (Higher Ed, Other)
+  When no performance winner exists, personas rotate round-robin within vertical.
 """
 
 import json
@@ -74,16 +85,46 @@ PERFORMANCE_STATS_FILE = ROOT / "campaigns" / "performance_stats.json"
 PROMPTS_DIR = ROOT / "prompts"
 
 # ── voice personas ────────────────────────────────────────────────────────────
-# paul.txt    → "Paul"  persona — authority / compliance angle (K-12, government)
-# cold_outreach.txt → "Alex" persona — cold open, qualify fast
+# paul.txt         → "Paul"    — authority/compliance angle (K-12, government)
+# mary.txt         → "Mary"    — warm, direct female persona (K-12, government)
+# jackson.txt      → "Jackson" — efficient, senior male (K-12, government)
+# cold_outreach.txt→ "Alex"    — cold open, qualify fast (Higher Ed, Other)
 
-VOICE_PAUL  = "openai.onyx"    # deep, authoritative — matches Paul's persona
-VOICE_ALEX  = "openai.shimmer" # warm but efficient — matches Alex's persona
+VOICE_PAUL    = "openai.onyx"    # deep, authoritative — matches Paul's persona
+VOICE_MARY    = "openai.nova"    # warm, professional female — matches Mary's persona
+VOICE_JACKSON = "openai.echo"    # clear, confident male — matches Jackson's persona
+VOICE_ALEX    = "openai.shimmer" # warm but efficient — matches Alex's persona
 
 # ── prompt paths ──────────────────────────────────────────────────────────────
-PROMPT_PAUL  = "prompts/paul.txt"
-PROMPT_COLD  = "prompts/cold_outreach.txt"
-PROMPT_K12   = "prompts/k12.txt"  # use if present, otherwise fall back to paul.txt
+PROMPT_PAUL    = "prompts/paul.txt"
+PROMPT_MARY    = "prompts/mary.txt"
+PROMPT_JACKSON = "prompts/jackson.txt"
+PROMPT_COLD    = "prompts/cold_outreach.txt"
+PROMPT_K12     = "prompts/k12.txt"  # use if present, otherwise fall back to paul.txt
+
+# ── persona map: prompt → (voice, persona_name) ───────────────────────────────
+# Used to resolve voice and display name from a prompt file path.
+PERSONA_MAP: Dict[str, Tuple[str, str]] = {
+    "prompts/paul.txt":          (VOICE_PAUL,    "paul"),
+    "prompts/k12.txt":           (VOICE_PAUL,    "paul"),    # k12.txt uses Paul's voice
+    "prompts/mary.txt":          (VOICE_MARY,    "mary"),
+    "prompts/jackson.txt":       (VOICE_JACKSON, "jackson"),
+    "prompts/cold_outreach.txt": (VOICE_ALEX,    "alex"),
+}
+
+# ── A/B test persona pools per vertical ───────────────────────────────────────
+# When no performance winner exists, we rotate through these evenly.
+# Once a prompt hits MIN_CALLS_FOR_PERF_ROUTING, performance data takes over.
+AB_POOL: Dict[str, List[str]] = {
+    "k12":        ["prompts/k12.txt", "prompts/mary.txt", "prompts/jackson.txt"],
+    "government": ["prompts/paul.txt", "prompts/mary.txt", "prompts/jackson.txt"],
+    "higher_ed":  ["prompts/cold_outreach.txt", "prompts/jackson.txt"],
+    "other":      ["prompts/cold_outreach.txt", "prompts/jackson.txt"],
+}
+
+# Round-robin counter per vertical (thread-safe via lock)
+_AB_COUNTERS: Dict[str, int] = {v: 0 for v in ["k12", "government", "higher_ed", "other"]}
+_AB_LOCK = threading.Lock()
 
 # ── vertical detection patterns ───────────────────────────────────────────────
 K12_PATTERNS = [
@@ -128,18 +169,24 @@ DEFAULT_PERF_STATS: Dict = {
     "k12": {
         "prompts/paul.txt":          {"calls": 0, "answered": 0},
         "prompts/k12.txt":           {"calls": 0, "answered": 0},
+        "prompts/mary.txt":          {"calls": 0, "answered": 0},
+        "prompts/jackson.txt":       {"calls": 0, "answered": 0},
         "prompts/cold_outreach.txt": {"calls": 0, "answered": 0},
     },
     "government": {
         "prompts/paul.txt":          {"calls": 0, "answered": 0},
+        "prompts/mary.txt":          {"calls": 0, "answered": 0},
+        "prompts/jackson.txt":       {"calls": 0, "answered": 0},
         "prompts/cold_outreach.txt": {"calls": 0, "answered": 0},
     },
     "higher_ed": {
         "prompts/cold_outreach.txt": {"calls": 0, "answered": 0},
+        "prompts/jackson.txt":       {"calls": 0, "answered": 0},
         "prompts/paul.txt":          {"calls": 0, "answered": 0},
     },
     "other": {
         "prompts/cold_outreach.txt": {"calls": 0, "answered": 0},
+        "prompts/jackson.txt":       {"calls": 0, "answered": 0},
         "prompts/paul.txt":          {"calls": 0, "answered": 0},
     },
 }
@@ -208,7 +255,7 @@ class SmartRouter:
 
         for account in candidates:
             vertical = self._classify_vertical(account)
-            prompt_file, voice = self._select_prompt_and_voice(vertical, perf)
+            prompt_file, voice, persona = self._select_prompt_and_voice(vertical, perf)
 
             # Time-of-day gate
             if not self.bypass_time_windows:
@@ -245,6 +292,7 @@ class SmartRouter:
                 best_routing = {
                     "prompt_file": prompt_file,
                     "voice": voice,
+                    "persona": persona,
                     "vertical": vertical,
                     "in_flight_for_state": in_flight_for_state,
                 }
@@ -276,11 +324,12 @@ class SmartRouter:
         )
 
         logger.info(
-            "[SmartRouter] agent=%s → %s | prompt=%s | voice=%s | reason=%s",
+            "[SmartRouter] agent=%s → %s | prompt=%s | voice=%s | persona=%s | reason=%s",
             agent_id,
             best.get("account_name"),
             best_routing["prompt_file"],
             best_routing["voice"],
+            best_routing.get("persona", "unknown"),
             reason,
         )
 
@@ -288,6 +337,7 @@ class SmartRouter:
             "account":     checked_out,
             "prompt_file": best_routing["prompt_file"],
             "voice":       best_routing["voice"],
+            "persona":     best_routing.get("persona", "unknown"),
             "vertical":    best_routing["vertical"],
             "reason":      reason,
         }
@@ -299,11 +349,14 @@ class SmartRouter:
         notes: str = "",
         answered: bool = False,
         referral_source: Optional[str] = None,
+        prompt_file: Optional[str] = None,
+        voice: Optional[str] = None,
     ) -> bool:
         """
         Mark a call complete + update performance stats.
 
         answered=True means the human picked up (even if call was short).
+        Pass prompt_file and voice explicitly if known (from orchestrator call dict).
         """
         # Remove from in-flight
         with self._lock:
@@ -322,7 +375,7 @@ class SmartRouter:
         if account:
             vertical = self._classify_vertical(account)
             perf = self._load_stats()
-            prompt_key = self._last_prompt_for_account(account)
+            prompt_key = prompt_file or self._last_prompt_for_account(account)
             if prompt_key and vertical in perf:
                 variant = perf[vertical].setdefault(
                     prompt_key, {"calls": 0, "answered": 0}
@@ -331,6 +384,26 @@ class SmartRouter:
                 if answered or outcome in ("interested", "referral_given"):
                     variant["answered"] += 1
                 self._save_stats(perf)
+
+            # Also update the richer PerformanceTracker with voice+persona data
+            if _perf_tracker is not None and prompt_key:
+                try:
+                    resolved_voice, _persona = PERSONA_MAP.get(prompt_key, (voice or "unknown", "unknown"))
+                    actual_voice = voice or resolved_voice
+                    state = (account.get("state") or "XX").upper()
+                    tracker_outcome = "answered" if answered else outcome
+                    if tracker_outcome not in ("answered", "voicemail", "no_answer",
+                                               "interested", "not_interested", "referral_given"):
+                        tracker_outcome = "answered" if answered else "no_answer"
+                    _perf_tracker.record_outcome(
+                        outcome=tracker_outcome,
+                        prompt_file=prompt_key,
+                        vertical=vertical,
+                        voice=actual_voice,
+                        state=state,
+                    )
+                except Exception as exc:
+                    logger.debug("[Router] PerformanceTracker record failed: %s", exc)
 
         return result
 
@@ -379,30 +452,18 @@ class SmartRouter:
 
     def _select_prompt_and_voice(
         self, vertical: str, perf: Dict
-    ) -> Tuple[str, str]:
+    ) -> Tuple[str, str, str]:
         """
-        Return (prompt_file, voice) for a vertical.
+        Return (prompt_file, voice, persona_name) for a vertical.
 
-        Vertical → default mapping (policy layer):
-          k12      → paul.txt  + VOICE_PAUL   (authority/compliance angle)
-          government → paul.txt + VOICE_PAUL
-          higher_ed  → cold_outreach.txt + VOICE_ALEX
-          other      → cold_outreach.txt + VOICE_ALEX
+        Selection order:
+          1. Performance winner (if ≥10 calls for any variant) → use best prompt
+          2. A/B rotation (round-robin across AB_POOL[vertical]) → explore evenly
+          3. Fallback to policy default (should never hit this)
 
-        Then performance layer overrides the prompt if we have enough data
-        and a clear winner.
+        Persona map resolves voice + display name from prompt path.
         """
-        # Policy defaults
-        defaults = {
-            "k12":        (self._resolve_k12_prompt(), VOICE_PAUL),
-            "government": (PROMPT_PAUL,  VOICE_PAUL),
-            "higher_ed":  (PROMPT_COLD,  VOICE_ALEX),
-            "other":      (PROMPT_COLD,  VOICE_ALEX),
-        }
-        default_prompt, default_voice = defaults.get(vertical, (PROMPT_COLD, VOICE_ALEX))
-
-        # Performance override — consult PerformanceTracker (richer data) first,
-        # then fall back to the built-in campaigns/performance_stats.json signal.
+        # ── layer 1: performance override ────────────────────────────────────
         best_prompt = None
         if _perf_tracker is not None:
             try:
@@ -411,17 +472,40 @@ class SmartRouter:
                 pass
         if best_prompt is None:
             best_prompt = self._best_prompt_by_perf(vertical, perf)
-        if best_prompt:
-            chosen_prompt = best_prompt
-            # Voice follows the prompt persona:
-            # paul.txt + k12.txt both use the "Paul" persona → VOICE_PAUL
-            _is_paul_persona = "paul" in best_prompt or "k12" in best_prompt
-            voice = VOICE_PAUL if _is_paul_persona else VOICE_ALEX
-        else:
-            chosen_prompt = default_prompt
-            voice = default_voice
 
-        return chosen_prompt, voice
+        if best_prompt:
+            voice, persona = PERSONA_MAP.get(best_prompt, (VOICE_PAUL, "paul"))
+            logger.debug("[Router] perf winner vertical=%s prompt=%s", vertical, best_prompt)
+            return best_prompt, voice, persona
+
+        # ── layer 2: A/B round-robin ──────────────────────────────────────────
+        pool = self._resolve_ab_pool(vertical)
+        if pool:
+            with _AB_LOCK:
+                idx = _AB_COUNTERS.get(vertical, 0) % len(pool)
+                _AB_COUNTERS[vertical] = idx + 1
+            chosen_prompt = pool[idx]
+            voice, persona = PERSONA_MAP.get(chosen_prompt, (VOICE_PAUL, "paul"))
+            logger.debug("[Router] A/B rotation vertical=%s idx=%d prompt=%s persona=%s",
+                         vertical, idx, chosen_prompt, persona)
+            return chosen_prompt, voice, persona
+
+        # ── layer 3: hard fallback ────────────────────────────────────────────
+        default_prompt = self._resolve_k12_prompt() if vertical == "k12" else PROMPT_COLD
+        voice, persona = PERSONA_MAP.get(default_prompt, (VOICE_ALEX, "alex"))
+        return default_prompt, voice, persona
+
+    def _resolve_ab_pool(self, vertical: str) -> List[str]:
+        """Return A/B pool for vertical, filtering to prompts that actually exist on disk."""
+        raw_pool = AB_POOL.get(vertical, [])
+        resolved = []
+        for p in raw_pool:
+            full_path = ROOT / p
+            if full_path.exists():
+                resolved.append(p)
+            else:
+                logger.debug("[Router] AB pool skipping missing prompt: %s", p)
+        return resolved
 
     def _resolve_k12_prompt(self) -> str:
         """Use k12.txt if it exists, otherwise paul.txt."""

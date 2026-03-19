@@ -363,12 +363,13 @@ def _agent_loop(
             from_number  = args.from_number or _select_from_number(account_state)
 
             logging.info(
-                "[%s] Routing: %s | vertical=%s | prompt=%s | voice=%s | %s",
+                "[%s] Routing: %s | vertical=%s | prompt=%s | voice=%s | persona=%s | %s",
                 agent_id,
                 account_name,
                 routing["vertical"],
                 prompt_path,
                 voice,
+                routing.get("persona", "unknown"),
                 routing["reason"],
             )
 
@@ -410,7 +411,10 @@ def _agent_loop(
                 )
             except Exception as exc:
                 logging.exception("[%s] make_call failed: %s", agent_id, exc)
-                router.complete_call(account_id, "no_answer", f"call error: {exc}", answered=False)
+                router.complete_call(
+                    account_id, "no_answer", f"call error: {exc}",
+                    answered=False, prompt_file=prompt_path, voice=voice,
+                )
                 record_call_outcome(
                     outcome="no_answer",
                     prompt_file=prompt_path,
@@ -427,14 +431,16 @@ def _agent_loop(
                 summary = entry.get("summary", "")
                 outcome = _parse_outcome(summary)
                 answered = outcome not in ("no_answer",)
+                persona  = routing.get("persona", "unknown")
 
-                # Complete via router so performance stats get updated
+                # Complete via router so performance stats get updated (now with voice+persona)
                 router.complete_call(
                     account_id,
                     outcome,
-                    # Embed prompt path in notes so perf tracker can attribute it
-                    notes=f"{summary}\n[prompt:{prompt_path}]",
+                    notes=f"{summary}\n[prompt:{prompt_path}][persona:{persona}]",
                     answered=answered,
+                    prompt_file=prompt_path,
+                    voice=voice,
                 )
                 record_call_outcome(
                     outcome=outcome,
@@ -443,18 +449,22 @@ def _agent_loop(
                     voice=voice,
                     state=account_state or "XX",
                 )
-                logging.info("[%s] Completed %s with outcome=%s", agent_id, account_name, outcome)
+                logging.info("[%s] Completed %s with outcome=%s persona=%s",
+                             agent_id, account_name, outcome, persona)
 
                 if outcome == "interested":
                     blocks = [
                         {"type": "section", "text": {"type": "mrkdwn",
-                                                     "text": f"*Interested Lead*\n*Account:* {account_name}\n*Phone:* {to_number}"}},
+                                                     "text": f"*Interested Lead*\n*Account:* {account_name}\n*Phone:* {to_number}\n*Persona:* {persona}"}},
                         {"type": "section", "text": {"type": "mrkdwn",
                                                      "text": f"*Summary:*\n{summary[:1500]}"}}
                     ]
                     _post_slack(f"Interested lead: {account_name}", blocks=blocks)
             else:
-                router.complete_call(account_id, "no_answer", "webhook timeout", answered=False)
+                router.complete_call(
+                    account_id, "no_answer", "webhook timeout",
+                    answered=False, prompt_file=prompt_path, voice=voice,
+                )
                 record_call_outcome(
                     outcome="no_answer",
                     prompt_file=prompt_path,
