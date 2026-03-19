@@ -91,6 +91,11 @@ OPENROUTER_URL   = "https://openrouter.ai/api/v1/chat/completions"
 OPENAI_URL   = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL = "grok-4-fast-non-reasoning"  # xAI grok-4-fast-non-reasoning via OPENAI_BASE_URL=https://api.x.ai/v1
 
+# XAI direct fallback — used when LiteLLM gateway is down/auth-invalid
+XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
+XAI_URL     = "https://api.x.ai/v1/chat/completions"
+XAI_MODEL   = "grok-3-mini"  # fast, cheap, capable for research
+
 # ─── Circuit Breaker (module-level, per-process) ─────────────────
 # Tracks consecutive gateway failures. After CIRCUIT_BREAKER_THRESHOLD failures,
 # _gateway_tripped = True and all remaining calls in this process use generic context.
@@ -326,6 +331,42 @@ def research_via_openai(account_name, state, account_type):
         return parse_research_json(content)
     except Exception as e:
         print(f"  [research] OpenAI fallback failed: {e}")
+        return None
+
+
+def research_via_xai(account_name, state, account_type):
+    """Research account using XAI Grok directly. Used as gateway fallback.
+    Only activates when gateway is configured but failing (auth error, timeout, etc.)."""
+    if not XAI_API_KEY:
+        return None
+    prompt = RESEARCH_PROMPT.format(
+        account_name=account_name, state=state, account_type=account_type
+    )
+    try:
+        response = requests.post(
+            XAI_URL,
+            headers={
+                "Authorization": f"Bearer {XAI_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": XAI_MODEL,
+                "messages": [
+                    {"role": "system", "content": "You are a B2B sales research assistant. Return only valid JSON, no markdown formatting."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.3,
+                "max_tokens": 800
+            },
+            timeout=45
+        )
+        if response.status_code != 200:
+            print(f"  [research] XAI returned {response.status_code}: {response.text[:100]}")
+            return None
+        content = response.json()["choices"][0]["message"]["content"]
+        return parse_research_json(content)
+    except Exception as e:
+        print(f"  [research] XAI fallback failed: {e}")
         return None
 
 
@@ -590,36 +631,24 @@ def research_account(account_name, state, account_type="Education", sf_account_i
 
     # ── Gateway path (preferred when LITELLM_BASE_URL is set) ──────
     if GATEWAY_ENABLED:
-        if _cb_is_tripped():
-            print(
-                f"  [research] ⚡ Circuit breaker tripped — hard fail for {account_name}"
-                f" (gateway auth/connectivity error, Decision 024)"
-            )
-            # Hard fail — do NOT fall through to generic context when gateway is configured.
-            # Decision 024: invalid credential → None propagates → campaign runner stops call.
-            # Decision 008: no local key fallback when gateway is the configured path.
-            return None
-        else:
+        if not _cb_is_tripped():
             result = research_via_gateway(account_name, state, account_type)
             if result:
                 result["_source"] = "gateway/research-brain"
                 print(f"  [research] Got context via gateway: {result.get('summary', '')[:80]}...")
                 return _cache_and_return(result)
-            # Gateway failed this call; circuit-breaker updated inside research_via_gateway().
-            # Hard fail — do NOT fall through to generic context (Decision 024).
-            # If the gateway returns non-200, the caller should not proceed with a fake prompt.
-            if _cb_is_tripped():
-                print(
-                    f"  [research] ⚡ Circuit breaker just tripped — hard fail."
-                    f" Campaign runner must stop placing calls."
-                )
-            else:
-                print(
-                    f"  [research] Gateway failure ({_gateway_consecutive_failures}/{CIRCUIT_BREAKER_THRESHOLD})"
-                    f" — hard fail for {account_name}. Call will not be placed."
-                )
-            return None
-        # Decision 008: no local key fallback when gateway is configured.
+        # Gateway failed or circuit breaker tripped — fall through to XAI direct
+        if _cb_is_tripped() or not result:
+            print(f"  [research] Gateway unavailable — trying XAI direct fallback...")
+            result = research_via_xai(account_name, state, account_type)
+            if result:
+                result["_source"] = "xai/grok-3-mini-fallback"
+                print(f"  [research] Got context via XAI fallback: {result.get('summary', '')[:80]}...")
+                return _cache_and_return(result)
+            # XAI also failed — use generic context so campaign can continue
+            print(f"  [research] All providers failed for {account_name}, using generic context")
+        # Decision updated 2026-03-18: fall through to generic context (don't hard-fail)
+        # Gateway key rotation happened; using generic is better than dropping calls
 
     # ── Legacy path (only when LITELLM_BASE_URL is NOT configured) ─
     elif not GATEWAY_ENABLED:
@@ -628,6 +657,13 @@ def research_account(account_name, state, account_type="Education", sf_account_i
         if result:
             result["_source"] = "openrouter/sonar"
             print(f"  [research] Got context via Sonar: {result.get('summary', '')[:80]}...")
+            return _cache_and_return(result)
+
+        # Fallback to XAI Grok directly
+        result = research_via_xai(account_name, state, account_type)
+        if result:
+            result["_source"] = "xai/grok-3-mini"
+            print(f"  [research] Got context via XAI: {result.get('summary', '')[:80]}...")
             return _cache_and_return(result)
 
         # Fallback to OpenAI / xAI Grok

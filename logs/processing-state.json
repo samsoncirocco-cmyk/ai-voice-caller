@@ -185,13 +185,37 @@
       "outcome": "No Answer",
       "lead_score": 10,
       "actions": 0
+    },
+    "pre-check-ping": {
+      "processed_at": "2026-03-17T19:20:01.701547+00:00",
+      "outcome": "No Answer",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "a430f642-613a-4a96-89e4-ac3184809660": {
+      "processed_at": "2026-03-17T19:20:01.703658+00:00",
+      "outcome": "No Answer",
+      "lead_score": 15,
+      "actions": 0
+    },
+    "test-live-sfdc-1773768770": {
+      "processed_at": "2026-03-17T19:20:01.783214+00:00",
+      "outcome": "No Answer",
+      "lead_score": 0,
+      "actions": 0
+    },
+    "6ed4a2b0-3d1e-4fe7-b5a6-9454f419ecc1": {
+      "processed_at": "2026-03-17T19:20:01.783951+00:00",
+      "outcome": "No Answer",
+      "lead_score": 5,
+      "actions": 1
     }
   },
   "stats": {
-    "total": 31,
+    "total": 35,
     "connected": 3,
     "meetings": 0,
     "referrals": 0,
-    "emails_queued": 3
+    "emails_queued": 4
   }
 }
